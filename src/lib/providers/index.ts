@@ -9,6 +9,7 @@ import {
   NoopAttributeProvider,
   NoopEmbeddingProvider,
 } from "./defaults.ts";
+import { GeminiAttributeProvider, GeminiOcrProvider } from "./gemini.ts";
 import { MistralOcrProvider } from "./mistral-ocr.ts";
 import type {
   AttributeProvider,
@@ -21,14 +22,30 @@ import type {
 
 export type { Providers };
 
+/**
+ * Sélection des fournisseurs, du meilleur au plus modeste :
+ *   OCR        Mistral (payant, dense) → Gemini (gratuit) → local (dev)
+ *   Attributs  Gemini (gratuit) → noop
+ *
+ * Aucun retour silencieux : ce qui n'est pas configuré est visible dans
+ * `providerStatus()` et se traduit par un blocage, pas par une invention.
+ */
 export function createProviders(overrides: Partial<Providers> = {}): Providers {
   const ocr: OcrProvider =
     overrides.ocr ??
-    (env.MISTRAL_API_KEY ? new MistralOcrProvider(env.MISTRAL_API_KEY) : new LocalOcrProvider());
+    (env.MISTRAL_API_KEY
+      ? new MistralOcrProvider(env.MISTRAL_API_KEY)
+      : env.GEMINI_API_KEY
+        ? new GeminiOcrProvider(env.GEMINI_API_KEY)
+        : new LocalOcrProvider());
+
+  const attributes: AttributeProvider =
+    overrides.attributes ??
+    (env.GEMINI_API_KEY ? new GeminiAttributeProvider(env.GEMINI_API_KEY) : new NoopAttributeProvider());
 
   return {
     ocr,
-    attributes: overrides.attributes ?? new NoopAttributeProvider(),
+    attributes,
     embeddings: overrides.embeddings ?? new NoopEmbeddingProvider(),
     sources: overrides.sources ?? [new EmptySourceAdapter()],
   };

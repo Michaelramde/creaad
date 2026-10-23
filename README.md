@@ -5,6 +5,7 @@
 Application mobile-first (PWA) qui transforme les photos d'un produit en trois kits exportables — matière, argumentaire, production — pour vendre sur un marché d'Afrique de l'Ouest.
 
 - **Spécification complète** : [`SPEC.md`](./SPEC.md)
+- **Déploiement** : [`DEPLOY.md`](./DEPLOY.md) — GitHub → Vercel → `creaad.site`
 - **État** : J0 (socle), J1 (identification), cœurs de J2/J3, contrats + cache, écrans.
 
 ---
@@ -126,6 +127,19 @@ baisse. L'OCR seul plafonne à 25 points — il ne peut pas faire accepter un ar
 
 Sans clé API, les fournisseurs par défaut ne devinent rien : l'analyse se **bloque**
 proprement (`NO_CANDIDATE`). C'est le comportement voulu.
+
+### Lire les photos sans budget
+
+L'ordre de sélection est dans `lib/providers/index.ts` :
+
+| Priorité | Fournisseur | Coût | Quand |
+|---|---|---|---|
+| 1 | **Mistral OCR** | ~1 $ / 1 000 pages | si `MISTRAL_API_KEY` — meilleur sur du texte dense |
+| 2 | **Gemini 2.5 Flash** | **gratuit** (palier AI Studio) | si `GEMINI_API_KEY` — OCR + attributs dans le même modèle |
+| 3 | Local (dev) | gratuit | aucun texte, aucune invention |
+
+Gemini accepte aussi les images en `data:` — le parcours de capture fonctionne donc
+**sans R2**. Paliers gratuits : attention aux quotas et à la réutilisation des données.
 
 ---
 
