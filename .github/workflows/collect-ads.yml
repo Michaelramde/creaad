@@ -1,0 +1,53 @@
+name: Collecte publicitaire
+
+# Collecte les annonces Meta / TikTok toutes les 6 heures et les écrit dans Neon.
+# Aucun coût : dépôt public = minutes illimitées, dépôt privé = 2 000 min/mois.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Plateforme (meta, tiktok, ou vide pour les deux)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Ne rien écrire (1/0)"
+        required: false
+        default: "0"
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Installer les dépendances
+        run: npm ci --ignore-scripts
+
+      - name: Installer le navigateur
+        run: |
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Collecter
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ONLY: ${{ inputs.only }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          ARGS=""
+          if [ -n "$ONLY" ]; then ARGS="$ARGS --only=$ONLY"; fi
+          if [ "$DRY_RUN" = "1" ]; then ARGS="$ARGS --dry-run"; fi
+          node scripts/collector.mjs $ARGS
+
+      - name: Résumé
+        if: always()
+        run: echo "Collecte terminée — voir les logs de l'étape précédente."

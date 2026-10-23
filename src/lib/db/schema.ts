@@ -289,6 +289,33 @@ export const creativeKits = pgTable("creative_kits", {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   OBSERVATIONS PUBLICITAIRES — faits bruts collectés, séparés du raisonnement
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export const adObservations = pgTable(
+  "ad_observations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    archetypeSlug: text("archetype_slug").notNull(),
+    country: text("country").notNull(),
+    platform: text("platform").$type<"meta" | "tiktok">().notNull(),
+    advertiserId: text("advertiser_id").notNull(),
+    advertiserName: text("advertiser_name"),
+    hook: text("hook"),
+    startDate: timestamp("start_date", { withTimezone: true }),
+    endDate: timestamp("end_date", { withTimezone: true }),
+    isActive: boolean("is_active").notNull().default(true),
+    url: text("url").notNull(),
+    source: text("source").notNull().default("collector"),
+    collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ux_ad_obs_url").on(t.platform, t.url),
+    index("ix_ad_obs_lookup").on(t.archetypeSlug, t.country, t.platform),
+  ],
+);
+
+/* ═══════════════════════════════════════════════════════════════════════════
    REGISTRE WALLET — append-only. Aucun UPDATE de solde, jamais.
    ═══════════════════════════════════════════════════════════════════════════ */
 

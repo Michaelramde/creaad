@@ -29,6 +29,10 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   /** Modèle Gemini — surchargeable car Google retire régulièrement les anciens. */
   GEMINI_MODEL: z.string().default("gemini-3.5-flash"),
+  /** AliExpress Open Platform — inscription gratuite, API officielle. */
+  ALIEXPRESS_APP_KEY: z.string().optional(),
+  ALIEXPRESS_APP_SECRET: z.string().optional(),
+  ALIEXPRESS_TRACKING_ID: z.string().default("creaad"),
   MISTRAL_API_KEY: z.string().optional(),
   APIFY_TOKEN: z.string().optional(),
 

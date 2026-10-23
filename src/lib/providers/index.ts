@@ -3,6 +3,7 @@
  * son état. Un fournisseur absent est **signalé**, pas remplacé par du faux.
  */
 import { env } from "../env.ts";
+import { AliExpressAdapter } from "./aliexpress.ts";
 import {
   EmptySourceAdapter,
   LocalOcrProvider,
@@ -45,11 +46,25 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
       ? new GeminiAttributeProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL)
       : new NoopAttributeProvider());
 
+  // Sources d'annonces : la première qui répond alimente l'appariement.
+  // Sans clé AliExpress, on garde une source vide — le pipeline bloquera
+  // proprement plutôt que d'inventer un candidat.
+  const defaultSources: SourceAdapter[] =
+    env.ALIEXPRESS_APP_KEY && env.ALIEXPRESS_APP_SECRET
+      ? [
+          new AliExpressAdapter(
+            env.ALIEXPRESS_APP_KEY,
+            env.ALIEXPRESS_APP_SECRET,
+            env.ALIEXPRESS_TRACKING_ID,
+          ),
+        ]
+      : [new EmptySourceAdapter()];
+
   return {
     ocr,
     attributes,
     embeddings: overrides.embeddings ?? new NoopEmbeddingProvider(),
-    sources: overrides.sources ?? [new EmptySourceAdapter()],
+    sources: overrides.sources ?? defaultSources,
   };
 }
 

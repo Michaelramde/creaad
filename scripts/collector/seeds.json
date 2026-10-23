@@ -1,0 +1,25 @@
+{
+  "_comment": "Requêtes collectées par le collecteur planifié. Un archétype = un slug + une requête par plateforme.",
+  "targets": [
+    {
+      "archetypeSlug": "beaute-serum-30ml",
+      "query": "serum visage",
+      "country": "CI"
+    },
+    {
+      "archetypeSlug": "cheveux-perruque-lace",
+      "query": "perruque lace",
+      "country": "CI"
+    },
+    {
+      "archetypeSlug": "gadgets-ecouteur-bluetooth",
+      "query": "ecouteur bluetooth",
+      "country": "CI"
+    },
+    {
+      "archetypeSlug": "mode-robe-wax",
+      "query": "robe wax",
+      "country": "CI"
+    }
+  ]
+}
