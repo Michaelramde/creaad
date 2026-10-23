@@ -68,7 +68,8 @@ for (const url of urls) {
     console.log(`OK · ${title.slice(0, 45)}`);
     results.push({ id, url, title, image, description });
   } catch (error) {
-    console.log(`ÉCHEC · ${error.message}`);
+    const cause = error?.cause?.code ?? error?.cause?.message ?? "";
+    console.log(`ÉCHEC · ${error.message}${cause ? ` (${cause})` : ""}`);
   }
 }
 

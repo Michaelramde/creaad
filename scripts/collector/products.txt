@@ -1,6 +1,6 @@
 # Produits AliExpress à enrichir (un par ligne).
-# Les pages de recherche AliExpress sont lisibles en HTTP simple : on peut en
-# extraire des identifiants sans navigateur, puis enrichir ici.
-https://www.aliexpress.com/item/1005005151934351.html
-https://www.aliexpress.com/item/1005005151926534.html
-https://www.aliexpress.com/item/1005008408709852.html
+# On utilise le domaine fr. : c'est la cible finale de la redirection depuis
+# www.aliexpress.com, et la seule joignable depuis les runners GitHub.
+https://fr.aliexpress.com/item/1005005151934351.html
+https://fr.aliexpress.com/item/1005005151926534.html
+https://fr.aliexpress.com/item/1005008408709852.html
