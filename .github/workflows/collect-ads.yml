@@ -49,10 +49,16 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Rechercher les annonces
+        env:
+          FB_STORAGE_STATE: ${{ secrets.FB_STORAGE_STATE }}
         run: |
           mkdir -p .tmp
-          # Navigateur + interception des réponses : la page appelle elle-même
-          # l'API avec le bon doc_id. Un seul archétype par exécution.
+          # L'Ad Library exige une session connectée. En CI, elle est fournie
+          # par le secret FB_STORAGE_STATE (généré par `npm run collect:login`).
+          if [ -z "$FB_STORAGE_STATE" ]; then
+            echo "::notice::FB_STORAGE_STATE absent — collecte Meta ignorée (session Facebook requise)."
+            exit 0
+          fi
           node scripts/collector.mjs --out=.tmp/ads.jsonl --max=10 --rotate
 
       - name: Écrire dans Neon

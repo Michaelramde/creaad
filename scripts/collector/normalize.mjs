@@ -9,10 +9,16 @@
  * Aucune valeur n'est inventée pour compléter un champ manquant.
  */
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { Pool } from "@neondatabase/serverless";
 
 const file = process.argv[2] ?? ".tmp/ads.jsonl";
 const DRY_RUN = process.argv.includes("--dry-run");
+
+if (!existsSync(file)) {
+  console.log(`${file} absent — rien à normaliser (collecte ignorée ou vide).`);
+  process.exit(0);
+}
 
 const lines = (await readFile(file, "utf8"))
   .split("\n")

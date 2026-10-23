@@ -15,7 +15,10 @@
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "db:studio": "drizzle-kit studio",
     "preview": "node scripts/preview.mjs",
-    "preview:build": "node scripts/build-preview.mjs"
+    "preview:build": "node scripts/build-preview.mjs",
+    "collect:login": "node scripts/collector.mjs --login",
+    "collect:meta": "node scripts/collector.mjs --max=10",
+    "collect:aliexpress": "node scripts/collector/aliexpress_enrich.mjs --file=scripts/collector/products.txt"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1156.0",
