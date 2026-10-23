@@ -1,10 +1,15 @@
 /**
- * Compile puis exécute le test de bout en bout paiement (sandbox GeniusPay).
+ * Compile puis exécute un test de bout en bout.
  *
- *   npm run test:e2e
+ *   node scripts/e2e.mjs tests/e2e-payment.ts
+ *   node scripts/e2e.mjs tests/e2e-webhook.ts
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { basename } from "node:path";
+
+const target = process.argv[2] ?? "tests/e2e-payment.ts";
+const outfile = `.tmp/${basename(target).replace(/\.ts$/, "")}.mjs`;
 
 const isWin = process.platform === "win32";
 const esbuild = isWin
@@ -19,7 +24,7 @@ if (!existsSync(esbuild)) {
 const build = spawnSync(
   esbuild,
   [
-    "tests/e2e-payment.ts",
+    target,
     "--bundle",
     "--platform=node",
     "--format=esm",
@@ -28,14 +33,14 @@ const build = spawnSync(
     "--external:@neondatabase/serverless",
     "--external:drizzle-orm",
     "--log-level=error",
-    "--outfile=.tmp/e2e-payment.mjs",
+    `--outfile=${outfile}`,
   ],
   { stdio: "inherit" },
 );
 
 if (build.status !== 0) process.exit(build.status ?? 1);
 
-const run = spawnSync(process.execPath, ["--env-file=.env.local", ".tmp/e2e-payment.mjs"], {
+const run = spawnSync(process.execPath, ["--env-file=.env.local", outfile], {
   stdio: "inherit",
 });
 
