@@ -40,6 +40,52 @@ if (urls.length === 0) {
   process.exit(1);
 }
 
+/**
+ * AliExpress renvoie les IP de datacenter dans une boucle de redirections
+ * (www → fr → gateway → …). `redirect: "follow"` s'y épuise.
+ * On suit donc à la main, avec un pot à cookies : c'est ce qui casse la boucle
+ * dans la plupart des cas.
+ */
+async function fetchWithCookies(startUrl, maxHops = 6) {
+  let url = startUrl;
+  let cookie = "";
+  let lastResponse;
+
+  for (let hop = 0; hop < maxHops; hop += 1) {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": UA,
+        "Accept-Language": "fr-FR,fr;q=0.9",
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    const setCookie = res.headers.getSetCookie?.() ?? [];
+    if (setCookie.length > 0) {
+      const jar = new Map(cookie ? cookie.split("; ").map((c) => [c.split("=")[0], c]) : []);
+      for (const raw of setCookie) {
+        const pair = raw.split(";")[0];
+        if (pair) jar.set(pair.split("=")[0], pair);
+      }
+      cookie = [...jar.values()].join("; ");
+    }
+
+    lastResponse = res;
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get("location");
+      if (!location) break;
+      url = new URL(location, url).toString();
+      continue;
+    }
+    break;
+  }
+
+  const html = lastResponse ? await lastResponse.text() : "";
+  return { status: lastResponse?.status ?? 0, html, finalUrl: url };
+}
+
 const meta = (html, property) => {
   const re = new RegExp(`<meta property="${property}" content="([^"]*)"`, "i");
   return re.exec(html)?.[1]?.replace(/&amp;/g, "&") ?? null;
@@ -51,14 +97,9 @@ for (const url of urls) {
   const id = /\/item\/(\d+)\.html/.exec(url)?.[1] ?? url;
   process.stdout.write(`→ ${id}… `);
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": UA, "Accept-Language": "fr-FR,fr;q=0.9" },
-      signal: AbortSignal.timeout(30_000),
-      redirect: "follow",
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { status, html } = await fetchWithCookies(url);
+    if (status !== 200) throw new Error(`HTTP ${status} après redirections`);
 
-    const html = await res.text();
     const title = meta(html, "og:title");
     const image = meta(html, "og:image");
     const description = meta(html, "og:description");
