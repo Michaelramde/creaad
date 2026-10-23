@@ -100,6 +100,13 @@ jobs:
           npm i --no-save aliexpress-product-scraper
           npx puppeteer browsers install chrome
 
+      - name: Contrôle d'accès (sans navigateur)
+        continue-on-error: true
+        run: |
+          # Distingue « IP du runner bloquée » de « scraper cassé » :
+          # une simple requête HTTP suffit à voir si la page répond.
+          node scripts/collector/aliexpress_search.mjs "vitamin c serum" --limit=3 --dry-run
+
       - name: Enrichir les produits
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
