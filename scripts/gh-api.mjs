@@ -121,8 +121,33 @@ try {
       break;
     }
 
+    case "jobs": {
+      const data = await api(`/repos/${OWNER}/${REPO}/actions/runs/${args[0]}/jobs`);
+      for (const job of data.jobs) {
+        console.log(`\n${job.name} · ${job.status} · ${job.conclusion ?? "en cours"}`);
+        for (const step of job.steps ?? []) {
+          const mark = step.conclusion === "failure" ? "✖" : step.conclusion === "success" ? "✔" : "·";
+          console.log(`  ${mark} ${step.name}`);
+        }
+        if (job.conclusion === "failure") console.log(`  job id : ${job.id}`);
+      }
+      break;
+    }
+
+    case "joblog": {
+      const res = await fetch(
+        `https://api.github.com/repos/${OWNER}/${REPO}/actions/jobs/${args[0]}/logs`,
+        { headers, redirect: "follow" },
+      );
+      if (!res.ok) throw new Error(`joblog → HTTP ${res.status}`);
+      const text = await res.text();
+      // On n'affiche que la fin : c'est là que se trouve l'erreur.
+      console.log(text.split("\n").slice(-60).join("\n"));
+      break;
+    }
+
     default:
-      console.log("Commandes : whoami · runs · dispatch · run · logs");
+      console.log("Commandes : whoami · runs · dispatch · run · logs · jobs · joblog");
   }
 } catch (error) {
   console.error(error.message);
