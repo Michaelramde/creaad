@@ -122,8 +122,14 @@ if (DRY_RUN) {
   process.exit(results.length > 0 ? 0 : 1);
 }
 
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL absente : le secret GitHub est vide ou mal nommé.");
+  process.exit(1);
+}
+
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
 let written = 0;
+let failed = 0;
 
 for (const product of results) {
   try {
@@ -147,10 +153,12 @@ for (const product of results) {
     );
     written += 1;
   } catch (error) {
+    failed += 1;
     console.warn(`  ! ${product.id} : ${error.message}`);
   }
 }
 
 await pool.end();
-console.log(`${written} produit(s) enregistré(s) dans source_listings.`);
-process.exit(results.length > 0 ? 0 : 1);
+console.log(`${written} produit(s) enregistré(s), ${failed} échec(s).`);
+// Rien écrit alors qu'on avait des produits = problème de base, pas de collecte.
+process.exit(written > 0 || results.length === 0 ? 0 : 1);
