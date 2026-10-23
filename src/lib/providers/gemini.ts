@@ -20,10 +20,21 @@ import type { OcrResult } from "../matching/types.ts";
 import type { Attributes } from "../matching/types.ts";
 import type { AttributeProvider, OcrProvider } from "./types.ts";
 
-const MODEL = "gemini-2.5-flash";
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+/**
+ * Modèle par défaut. Google retire régulièrement d'anciens modèles pour les
+ * nouveaux comptes (`gemini-2.5-flash` répond 404 aujourd'hui) : la valeur est
+ * surchargeable par `GEMINI_MODEL` sans toucher au code.
+ *
+ * Liste à jour : `GET /v1beta/models?key=...` → `scripts/list-models.mjs`.
+ */
+export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
 
-export const GEMINI_MODEL = MODEL;
+/** Un appel modèle ne doit jamais bloquer un pipeline de bout en bout. */
+const TIMEOUT_MS = 60_000;
+
+function endpointFor(model: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+}
 
 interface InlinePart {
   inline_data: { mime_type: string; data: string };
@@ -49,10 +60,11 @@ interface GeminiResponse {
 
 async function generate(
   apiKey: string,
+  model: string,
   parts: unknown[],
   generationConfig?: Record<string, unknown>,
 ): Promise<string> {
-  const res = await fetch(`${ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
+  const res = await fetch(`${endpointFor(model)}?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -60,6 +72,7 @@ async function generate(
       ...(generationConfig ? { generationConfig } : {}),
     }),
     cache: "no-store",
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -79,15 +92,17 @@ async function generate(
 export class GeminiOcrProvider implements OcrProvider {
   readonly name = "gemini-ocr";
   private readonly apiKey: string;
+  private readonly model: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, model: string = DEFAULT_GEMINI_MODEL) {
     this.apiKey = apiKey;
+    this.model = model;
   }
 
   async extract(imageUrl: string): Promise<OcrResult> {
     const image = await toInlinePart(imageUrl);
 
-    const text = await generate(this.apiKey, [
+    const text = await generate(this.apiKey, this.model, [
       image,
       {
         text:
@@ -115,9 +130,11 @@ const ATTRIBUTE_SCHEMA = {
 export class GeminiAttributeProvider implements AttributeProvider {
   readonly name = "gemini-attributes";
   private readonly apiKey: string;
+  private readonly model: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, model: string = DEFAULT_GEMINI_MODEL) {
     this.apiKey = apiKey;
+    this.model = model;
   }
 
   async describe(imageUrls: readonly string[]): Promise<Attributes> {
@@ -126,6 +143,7 @@ export class GeminiAttributeProvider implements AttributeProvider {
     const parts = await Promise.all(imageUrls.slice(0, 4).map(toInlinePart));
     const raw = await generate(
       this.apiKey,
+      this.model,
       [
         ...parts,
         {

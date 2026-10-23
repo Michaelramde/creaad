@@ -27,6 +27,8 @@ const schema = z.object({
   INNGEST_SIGNING_KEY: z.string().optional(),
 
   GEMINI_API_KEY: z.string().optional(),
+  /** Modèle Gemini — surchargeable car Google retire régulièrement les anciens. */
+  GEMINI_MODEL: z.string().default("gemini-3.5-flash"),
   MISTRAL_API_KEY: z.string().optional(),
   APIFY_TOKEN: z.string().optional(),
 

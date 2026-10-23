@@ -36,12 +36,14 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
     (env.MISTRAL_API_KEY
       ? new MistralOcrProvider(env.MISTRAL_API_KEY)
       : env.GEMINI_API_KEY
-        ? new GeminiOcrProvider(env.GEMINI_API_KEY)
+        ? new GeminiOcrProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL)
         : new LocalOcrProvider());
 
   const attributes: AttributeProvider =
     overrides.attributes ??
-    (env.GEMINI_API_KEY ? new GeminiAttributeProvider(env.GEMINI_API_KEY) : new NoopAttributeProvider());
+    (env.GEMINI_API_KEY
+      ? new GeminiAttributeProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL)
+      : new NoopAttributeProvider());
 
   return {
     ocr,
