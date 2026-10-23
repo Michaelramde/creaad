@@ -137,6 +137,16 @@ try {
 
       const before = records.length;
       console.log(`${records.length - before} annonce(s) · ${endpoints} réponse(s) JSON · ${nodesSeen} nœuds`);
+
+      if (records.length === 0) {
+        // Diagnostic : que montre réellement la page ?
+        const title = await page.title().catch(() => "?");
+        const body = (await page.textContent("body").catch(() => "")) ?? "";
+        const adLinks = await page.locator('a[href*="ads/library/?id="]').count().catch(() => 0);
+        console.log(`   titre: ${title.slice(0, 80)}`);
+        console.log(`   liens pub: ${adLinks}`);
+        console.log(`   texte: ${body.replace(/\s+/g, " ").slice(0, 220)}`);
+      }
     } catch (error) {
       console.log(`ÉCHEC · ${error.message}`);
     }
