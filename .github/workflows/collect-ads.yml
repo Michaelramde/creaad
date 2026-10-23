@@ -42,26 +42,18 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Dépendances
         run: |
           npm ci --ignore-scripts
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade meta-ads-collector
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
 
       - name: Rechercher les annonces
         run: |
           mkdir -p .tmp
-          # Un seul archétype par exécution : Meta limite fortement les
-          # requêtes répétées depuis une même IP (constaté en production).
-          python scripts/collector/meta_search.py \
-            --seeds scripts/collector/seeds.json \
-            --out .tmp/ads.jsonl \
-            --max 10 \
-            --rotate
+          # Navigateur + interception des réponses : la page appelle elle-même
+          # l'API avec le bon doc_id. Un seul archétype par exécution.
+          node scripts/collector.mjs --out=.tmp/ads.jsonl --max=10 --rotate
 
       - name: Écrire dans Neon
         env:
