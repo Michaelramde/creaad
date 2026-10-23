@@ -1,0 +1,13 @@
+# Fichiers jamais envoyés à Vercel.
+# ⚠️ `.env.local` contient les secrets : il ne doit pas quitter la machine.
+.env
+.env.*
+!.env.example
+
+node_modules
+.tmp
+.npm-cache
+
+README.md
+SPEC.md
+DEPLOY.md
