@@ -57,18 +57,24 @@ interface GpEnvelope<T> {
 }
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
-  requireEnv("GP_PK", "GP_SK");
+  // Constaté en sandbox : `X-API-Key` suffit à créer un paiement ; le secret
+  // n'est exigé qu'en production. On l'envoie donc s'il est présent, sans
+  // bloquer le développement quand il manque.
+  requireEnv("GP_PK");
+
+  const headers: Record<string, string> = {
+    "X-API-Key": env.GP_PK!,
+    "Content-Type": "application/json",
+    ...((init.headers as Record<string, string> | undefined) ?? {}),
+  };
+  if (env.GP_SK) headers["X-API-Secret"] = env.GP_SK;
 
   const res = await fetch(`${env.GP_BASE}${path}`, {
     ...init,
-    headers: {
-      "X-API-Key": env.GP_PK!,
-      "X-API-Secret": env.GP_SK!,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
+    headers,
     // Un paiement est un effet de bord : jamais de cache.
     cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
   });
 
   const text = await res.text();
@@ -118,7 +124,9 @@ export async function initiatePayment(input: InitiateInput): Promise<InitiateRes
 
   return {
     reference: data.reference,
-    status: data.status,
+    // ⚠️ L'API renvoie `status: null` à la création. Sans ce repli, l'insertion
+    // violait la contrainte NOT NULL de `topups.status`.
+    status: (data.status ?? "pending") as GpStatus,
     amountXof: data.amount,
     checkoutUrl: data.checkout_url ?? data.payment_url,
     paymentUrl: data.payment_url,
@@ -143,7 +151,8 @@ export async function verifyPayment(reference: string): Promise<PaymentState> {
 
   return {
     reference: data.reference,
-    status: data.status,
+    // Même prudence à la lecture : un statut inconnu ne doit pas devenir `null`.
+    status: (data.status ?? "pending") as GpStatus,
     amountXof: data.amount,
     currency: data.currency,
     fees: data.fees,

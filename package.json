@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test --test-isolation=none \"tests/**/*.test.ts\"",
     "test:integration": "node scripts/integration.mjs",
+    "test:e2e": "node scripts/e2e.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "db:studio": "drizzle-kit studio",
     "preview": "node scripts/preview.mjs",
