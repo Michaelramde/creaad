@@ -12,3 +12,4 @@ next-env.d.ts
 .env*
 pip-*
 __pycache__/
+.secrets/
