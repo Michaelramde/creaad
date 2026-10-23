@@ -32,6 +32,22 @@ if (urls.length === 0) {
 
 let scraper;
 try {
+  /**
+   * GitHub Actions (Ubuntu 23.10+) désactive les « user namespaces » non
+   * privilégiés : Chromium refuse alors de démarrer avec
+   * « FATAL: No usable sandbox! ». On force donc --no-sandbox sur l'instance
+   * partagée de puppeteer-extra, AVANT d'importer le scraper.
+   */
+  const pe = await import("puppeteer-extra");
+  const instance = pe.default ?? pe;
+  if (instance?.launch && !instance.__creaadPatched) {
+    const original = instance.launch.bind(instance);
+    const extraArgs = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"];
+    instance.launch = (options = {}) =>
+      original({ ...options, args: [...(options.args ?? []), ...extraArgs] });
+    instance.__creaadPatched = true;
+  }
+
   const mod = await import("aliexpress-product-scraper");
   scraper = mod.default ?? mod;
 } catch (error) {

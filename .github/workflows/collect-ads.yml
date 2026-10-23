@@ -19,6 +19,10 @@ on:
         description: "Ne pas lancer la collecte AliExpress (1/0)"
         required: false
         default: "0"
+      skip_meta:
+        description: "Ne pas lancer la collecte Meta (1/0)"
+        required: false
+        default: "0"
 
 concurrency:
   group: collect
@@ -27,6 +31,7 @@ concurrency:
 jobs:
   meta-ads:
     name: Annonces Meta
+    if: ${{ inputs.skip_meta != '1' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -50,10 +55,13 @@ jobs:
       - name: Rechercher les annonces
         run: |
           mkdir -p .tmp
+          # Un seul archétype par exécution : Meta limite fortement les
+          # requêtes répétées depuis une même IP (constaté en production).
           python scripts/collector/meta_search.py \
             --seeds scripts/collector/seeds.json \
             --out .tmp/ads.jsonl \
-            --max 20
+            --max 10 \
+            --rotate
 
       - name: Écrire dans Neon
         env:

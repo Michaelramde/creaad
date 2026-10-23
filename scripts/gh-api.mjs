@@ -124,12 +124,11 @@ try {
     case "jobs": {
       const data = await api(`/repos/${OWNER}/${REPO}/actions/runs/${args[0]}/jobs`);
       for (const job of data.jobs) {
-        console.log(`\n${job.name} · ${job.status} · ${job.conclusion ?? "en cours"}`);
+        console.log(`\n${job.name} · ${job.status} · ${job.conclusion ?? "en cours"} · id ${job.id}`);
         for (const step of job.steps ?? []) {
           const mark = step.conclusion === "failure" ? "✖" : step.conclusion === "success" ? "✔" : "·";
           console.log(`  ${mark} ${step.name}`);
         }
-        if (job.conclusion === "failure") console.log(`  job id : ${job.id}`);
       }
       break;
     }
@@ -141,8 +140,10 @@ try {
       );
       if (!res.ok) throw new Error(`joblog → HTTP ${res.status}`);
       const text = await res.text();
-      // On n'affiche que la fin : c'est là que se trouve l'erreur.
-      console.log(text.split("\n").slice(-60).join("\n"));
+      // `--tail=N` limite l'affichage ; par défaut tout le log.
+      const tailArg = args[1]?.startsWith("--tail=") ? Number(args[1].split("=")[1]) : 0;
+      const lines = text.split("\n");
+      console.log((tailArg > 0 ? lines.slice(-tailArg) : lines).join("\n"));
       break;
     }
 

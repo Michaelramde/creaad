@@ -11,6 +11,7 @@ lignes `ad_observations`. Les champs absents restent absents — jamais inventé
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timezone
 
 
@@ -80,7 +81,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seeds", default="scripts/collector/seeds.json")
     parser.add_argument("--out", default=".tmp/ads.jsonl")
-    parser.add_argument("--max", type=int, default=20, help="résultats par archétype")
+    parser.add_argument("--max", type=int, default=10, help="résultats par archétype")
+    parser.add_argument(
+        "--rotate",
+        action="store_true",
+        help="ne traite qu'un archétype par exécution (rotation horaire) — "
+        "Meta limite fortement les requêtes répétées depuis une même IP",
+    )
+    parser.add_argument("--sleep", type=int, default=20, help="secondes entre deux recherches")
     args = parser.parse_args()
 
     try:
@@ -92,11 +100,20 @@ def main():
     with open(args.seeds, encoding="utf-8") as handle:
         seeds = json.load(handle)["targets"]
 
+    if args.rotate and seeds:
+        index = (datetime.now(timezone.utc).hour // 6) % len(seeds)
+        seeds = [seeds[index]]
+        print(f"rotation : archétype {seeds[0]['archetypeSlug']}")
+
     total = 0
     written = 0
+    limited = 0
 
     with open(args.out, "w", encoding="utf-8") as out, MetaAdsCollector() as collector:
-        for seed in seeds:
+        for position, seed in enumerate(seeds):
+            if position > 0 and args.sleep > 0:
+                time.sleep(args.sleep)
+
             try:
                 ads = list(
                     collector.search(
@@ -106,7 +123,12 @@ def main():
                     )
                 )
             except Exception as error:  # réseau, rate limit, changement côté Meta
-                print(f"  ! {seed['archetypeSlug']} : {error}", file=sys.stderr)
+                message = str(error)
+                if "rate limit" in message.lower():
+                    limited += 1
+                    print(f"  ~ {seed['archetypeSlug']} : rate limit, nouvel essai à la prochaine exécution")
+                else:
+                    print(f"  ! {seed['archetypeSlug']} : {message}", file=sys.stderr)
                 continue
 
             kept = 0
@@ -122,6 +144,8 @@ def main():
             print(f"  meta · {seed['archetypeSlug']} · {kept}/{len(ads)} annonce(s)")
 
     print(f"\n{written} annonce(s) écrite(s) dans {args.out} (sur {total} reçues).")
+    if limited:
+        print(f"{limited} archétype(s) limité(s) par le débit — sera repris à la prochaine exécution.")
     return 0
 
 
