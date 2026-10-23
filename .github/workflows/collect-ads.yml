@@ -45,7 +45,7 @@ jobs:
       - name: Dépendances
         run: |
           npm ci --ignore-scripts
-          npm i --no-save playwright
+          npm i --no-save playwright playwright-extra puppeteer-extra-plugin-stealth
           npx playwright install --with-deps chromium
 
       - name: Rechercher les annonces

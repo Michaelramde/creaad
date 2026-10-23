@@ -11,7 +11,16 @@
  *   node scripts/collector.mjs --out=.tmp/ads.jsonl --max=10 [--rotate] [--dry-run]
  */
 import { readFile, writeFile } from "node:fs/promises";
-import { chromium } from "playwright";
+import { chromium as chromiumBase } from "playwright-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+/**
+ * Facebook renvoie une page `_fb_noscript` quand il détecte un navigateur
+ * automatisé : sans JavaScript, aucun appel GraphQL, aucune annonce.
+ * Le plugin furtif neutralise les marqueurs habituels (navigator.webdriver,
+ * empreinte WebGL, plugins…).
+ */
+chromiumBase.use(StealthPlugin());
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
@@ -69,9 +78,14 @@ function walk(node, visit, depth = 0) {
 
 /* ── collecte d'un archétype ─────────────────────────────────────────────── */
 
-const browser = await chromium.launch({
+const browser = await chromiumBase.launch({
   headless: true,
-  args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-blink-features=AutomationControlled",
+  ],
 });
 
 const records = [];
@@ -82,6 +96,11 @@ try {
     userAgent: UA,
     locale: "fr-FR",
     viewport: { width: 1280, height: 900 },
+  });
+
+  // Ceinture et bretelles : certains scripts lisent navigator.webdriver très tôt.
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
   });
 
   for (const target of targets) {
