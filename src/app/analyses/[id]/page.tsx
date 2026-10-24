@@ -376,6 +376,19 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         </Card>
       )}
 
+      {row.status === "livree" && !(kit?.angles && kit.angles.length > 0) && (
+        <section className="mt-6">
+          <Kicker>Produire · tes créas</Kicker>
+          <Card className="mt-2">
+            <p className="text-sm text-stone-700">Rédaction du kit production en cours…</p>
+            <p className="mt-1 text-xs leading-relaxed text-stone-500">
+              Le rédacteur a été momentanément indisponible. Le kit se complète tout seul dans
+              quelques secondes — recharge la page.
+            </p>
+          </Card>
+        </section>
+      )}
+
       {kit?.angles && kit.angles.length > 0 && (
         <section className="mt-6">
           <Kicker>Produire · tes créas</Kicker>
