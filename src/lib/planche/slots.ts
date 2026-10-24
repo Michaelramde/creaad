@@ -3,7 +3,7 @@
  * Une planche est jugée sur ce qu'elle couvre : un slot manquant fait baisser
  * le score et est **nommé** à l'utilisateur.
  */
-import type { Category } from "../matching/types.ts";
+import type { Category, Regime } from "../matching/types.ts";
 
 export type SlotId =
   | "face" | "trois-quarts" | "profil" | "dos" | "sommet" | "dessous"
@@ -57,8 +57,18 @@ export const REQUIRED_SLOTS: Record<Category, SlotSpec[]> = {
   ],
 };
 
-export function requiredSlots(category: Category): SlotSpec[] {
-  return REQUIRED_SLOTS[category];
+/**
+ * Vues obligatoires pour un régime donné.
+ *
+ * Un commerçant qui **possède** le produit peut être envoyé photographier un
+ * macro de label. Un commerçant qui ne l'a pas dépend des photos fournisseur,
+ * et celles-ci ne contiennent jamais ce genre de détail : exiger un macro le
+ * condamnerait à un refus permanent. Les macros deviennent donc facultatives
+ * en régime `non_detenu` — leur absence n'est plus bloquante.
+ */
+export function requiredSlots(category: Category, regime: Regime = "detenu"): SlotSpec[] {
+  const slots = REQUIRED_SLOTS[category];
+  return regime === "non_detenu" ? slots.filter((slot) => !slot.macro) : slots;
 }
 
 export function slotsFromAngles(angles: readonly (string | undefined)[]): SlotId[] {

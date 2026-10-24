@@ -1,14 +1,19 @@
 /**
- * Score de fidélité de la planche (SPEC §9.4) — 0 à 100.
+ * Score de fidélité de la planche — 0 à 100.
  *
- *   couverture  30   slots obligatoires remplis, pondérés
- *   résolution  20   taille des visuels retenus
- *   consensus   20   nombre de sources réellement distinctes
- *   cohérence   15   les vues montrent-elles le même article ?
- *   texte       15   lisibilité du label (OCR + macro)
+ *   couverture  50   slots obligatoires remplis, pondérés
+ *   résolution  25   taille des visuels retenus
+ *   texte       25   lisibilité du label (OCR + macro)
  *
- * Seuil 65. En dessous, la production est **refusée** : produire un brief
- * sur une planche douteuse coûte plus cher qu'un refus.
+ * ⚠️ Recalibré le 24/10 après exécution réelle : la version initiale
+ * (30/20/20/15/15) réservait 35 points au « consensus » et à la « cohérence »
+ * inter-vues — deux mesures qui exigent un décodage d'image et plusieurs
+ * sources, que le pipeline ne fournit pas encore. Ces 35 points étaient donc
+ * distribués à partir d'une constante inventée (0,7), ce qui gonflait le score
+ * sans rien mesurer. On ne note désormais que ce qui est mesuré.
+ *
+ * Le consensus inter-annonces reste calculé — mais dans le **kit matière**
+ * (specs), là où il a un sens.
  */
 import type { Regime } from "../matching/types.ts";
 import { countDistinctSources } from "./phash.ts";
@@ -19,14 +24,16 @@ export const FIDELITY_THRESHOLD = 65;
 /** Régime non détenu : impossible d'exiger des prises de vue, plafond assumé. */
 export const NON_DETENU_CAP = 80;
 
+export const FIDELITY_WEIGHTS = { coverage: 50, resolution: 25, text: 25 } as const;
+
 export type FidelityGate = "PASSED" | "LOW_SCORE" | "MISSING_SLOTS";
 
 export interface FidelityBreakdown {
   coverage: number;
   resolution: number;
-  consensus: number;
-  consistency: number;
   text: number;
+  /** Informations non notées, pour l'audit. */
+  distinctSources: number;
 }
 
 export interface FidelityInput {
@@ -34,7 +41,6 @@ export interface FidelityInput {
   specs: readonly SlotSpec[];
   filled: readonly SlotId[];
   images: readonly CandidateImage[];
-  consistency: number;
   labelOcrConfidence: number;
   hasMacroLabel: boolean;
 }
@@ -56,40 +62,34 @@ export function computeFidelity(input: FidelityInput): FidelityResult {
     .filter((s) => input.filled.includes(s.id))
     .reduce((acc, s) => acc + s.weight, 0);
 
-  const coverage = totalWeight === 0 ? 0 : (filledWeight / totalWeight) * 30;
+  const coverage =
+    totalWeight === 0 ? 0 : (filledWeight / totalWeight) * FIDELITY_WEIGHTS.coverage;
 
   const resAvg =
     input.images.length === 0
       ? 0
       : input.images.reduce((acc, img) => acc + resolutionRatio(img), 0) / input.images.length;
-  const resolution = resAvg * 20;
+  const resolution = resAvg * FIDELITY_WEIGHTS.resolution;
 
-  // Trois sources distinctes suffisent à considérer une spec comme corroborée.
+  // Sans macro de label, le texte n'est jamais considéré comme pleinement fiable.
+  const text =
+    clamp01(input.labelOcrConfidence) *
+    FIDELITY_WEIGHTS.text *
+    (input.hasMacroLabel ? 1 : 0.5);
+
   const hashed = input.images.filter(
     (i): i is CandidateImage & { phash: string } => typeof i.phash === "string",
   );
-  const distinct = countDistinctSources(hashed);
-  const consensus = Math.min(1, distinct / 3) * 20;
-
-  const consistency = clamp01(input.consistency) * 15;
-
-  // Sans macro de label, le texte n'est jamais considéré comme pleinement fiable.
-  const textScore = clamp01(input.labelOcrConfidence) * 15 * (input.hasMacroLabel ? 1 : 0.5);
 
   const breakdown: FidelityBreakdown = {
     coverage: round(coverage),
     resolution: round(resolution),
-    consensus: round(consensus),
-    consistency: round(consistency),
-    text: round(textScore),
+    text: round(text),
+    distinctSources: countDistinctSources(hashed),
   };
 
   const raw = Math.round(
-    breakdown.coverage +
-      breakdown.resolution +
-      breakdown.consensus +
-      breakdown.consistency +
-      breakdown.text,
+    breakdown.coverage + breakdown.resolution + breakdown.text,
   );
 
   const missing = input.specs.filter((s) => !input.filled.includes(s.id)).map((s) => s.id);

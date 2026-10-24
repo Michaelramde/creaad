@@ -29,9 +29,15 @@ import type { AttributeProvider, OcrProvider } from "./types.ts";
  */
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
 
+/**
+ * Modèles de repli. Les quotas Gemini sont **par modèle** : quand le principal
+ * est saturé, un modèle plus léger répond encore. Constaté en production le
+ * 24/10 : `gemini-3.5-flash` en 429, `gemini-3.5-flash-lite` disponible.
+ */
+export const GEMINI_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+
 /** Un appel modèle ne doit jamais bloquer un pipeline de bout en bout. */
 const TIMEOUT_MS = 60_000;
-
 function endpointFor(model: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 }
@@ -58,23 +64,12 @@ interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
 }
 
-export async function generate(
-  apiKey: string,
-  model: string,
-  parts: unknown[],
-  generationConfig?: Record<string, unknown>,
-): Promise<string> {
-  const body = JSON.stringify({
-    contents: [{ role: "user", parts }],
-    ...(generationConfig ? { generationConfig } : {}),
-  });
-
-  // 429 et 503 sont fréquents chez Gemini (« high demand ») : on réessaie
-  // avant de déclarer l'étape en échec.
+/** Un appel, avec deux tentatives sur les erreurs transitoires. */
+async function attemptModel(apiKey: string, model: string, body: string): Promise<string> {
   const retryable = new Set([429, 500, 503]);
-  let lastError: Error | undefined;
+  let lastError: Error & { status?: number } = new Error("Gemini : échec inconnu");
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     const res = await fetch(`${endpointFor(model)}?key=${encodeURIComponent(apiKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -92,13 +87,45 @@ export async function generate(
     }
 
     const detail = await res.text().catch(() => "");
-    lastError = new Error(`Gemini → HTTP ${res.status} : ${detail.slice(0, 200)}`);
+    lastError = Object.assign(
+      new Error(`Gemini → HTTP ${res.status} : ${detail.slice(0, 200)}`),
+      { status: res.status },
+    );
 
-    if (!retryable.has(res.status) || attempt === 2) throw lastError;
+    if (!retryable.has(res.status) || attempt === 1) throw lastError;
     await new Promise((r) => setTimeout(r, 1_500 * 2 ** attempt));
   }
 
-  throw lastError ?? new Error("Gemini : échec inconnu");
+  throw lastError;
+}
+
+export async function generate(
+  apiKey: string,
+  model: string,
+  parts: unknown[],
+  generationConfig?: Record<string, unknown>,
+): Promise<string> {
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts }],
+    ...(generationConfig ? { generationConfig } : {}),
+  });
+
+  const models = [model, ...GEMINI_FALLBACKS.filter((m) => m !== model)];
+  let lastError: Error & { status?: number } = new Error("Gemini : échec inconnu");
+
+  for (const candidate of models) {
+    try {
+      return await attemptModel(apiKey, candidate, body);
+    } catch (error) {
+      lastError = error as Error & { status?: number };
+      // 429 = quota du modèle atteint, 404 = modèle retiré : un autre peut répondre.
+      // 401/400 = problème de clé ou de requête : inutile d'insister.
+      if (lastError.status !== 429 && lastError.status !== 404) throw lastError;
+      console.warn(`[gemini] ${candidate} indisponible (${lastError.status}), repli…`);
+    }
+  }
+
+  throw lastError;
 }
 
 export class GeminiOcrProvider implements OcrProvider {

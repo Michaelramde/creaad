@@ -37,7 +37,7 @@ export async function buildPlanStep(
   providers: Providers,
   input: PlanStepInput,
 ): Promise<PlanStepResult> {
-  const specs = requiredSlots(input.category);
+  const specs = requiredSlots(input.category, input.regime);
   const warnings: string[] = [];
 
   let assigned: (string | null)[] = input.photos.map(() => null);

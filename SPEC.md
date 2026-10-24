@@ -332,14 +332,26 @@ deviner. Le déblocage est possible, mais il est **humain** (`confirm-article`) 
 
 | Composante | Poids | Barème |
 |---|---|---|
-| Couverture | 30 | `30 × slots_remplis / slots_requis` |
-| Résolution | 20 | 0 si < 512 px, 20 si ≥ 2048 px, linéaire en log2 entre les deux |
-| Consensus | 20 | `20 × min(1, sources_distinctes / 3)` |
-| Cohérence | 15 | similarité inter-vues du même article (détecte les listings qui mélangent des produits) |
-| Texte | 15 | confiance OCR du label + présence du macro-label |
+| Couverture | 50 | `50 × poids_slots_remplis / poids_slots_requis` |
+| Résolution | 25 | 0 si < 512 px, 25 si ≥ 2048 px, linéaire en log2 entre les deux |
+| Texte | 25 | confiance OCR du label × 0,5 si le macro-label est absent |
 
-**Seuil = 65.** En dessous : `gatePassed = false`, la production est refusée et l'app indique **quels slots manquent**.
-Régime `non_detenu` : plafond de score à 80, `qualityNote` explicite affichée à l'utilisateur.
+> **Recalibré le 24/10 après exécution réelle.** La version initiale prévoyait
+> 30/20/20/15/15, dont **35 points** pour le « consensus » et la « cohérence »
+> inter-vues. Ces deux mesures exigent un décodage d'image et plusieurs sources
+> que le pipeline ne fournit pas encore : les points étaient distribués à partir
+> d'une constante inventée (0,7). **On ne note désormais que ce qui est mesuré.**
+> Le consensus inter-annonces reste calculé — mais dans le kit matière (specs),
+> là où il a un sens.
+
+**Vues requises selon le régime.** Un commerçant qui possède le produit peut
+être envoyé photographier un macro de label ; celui qui ne l'a pas dépend des
+photos fournisseur, qui n'en contiennent jamais. En `non_detenu`, les slots
+marqués `macro` **ne sont plus obligatoires** — sinon le refus serait permanent.
+
+**Seuil = 65.** En dessous : `gatePassed = false`, la production est refusée et
+l'app indique **quels slots manquent**. Régime `non_detenu` : plafond à 80 et
+`qualityNote` explicite.
 
 ### 9.5 Sélection par slot
 

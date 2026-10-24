@@ -189,7 +189,6 @@ test("fidélité : planche complète → 100, acceptée", () => {
     specs: fiveSlots,
     filled: fiveSlots.map((s) => s.id),
     images,
-    consistency: 1,
     labelOcrConfidence: 1,
     hasMacroLabel: true,
   });
@@ -206,7 +205,6 @@ test("fidélité : régime détenu, slot manquant → production refusée", () =
     specs: fiveSlots,
     filled,
     images: filled.map((s, i) => photo(`p${i}`, s, `${i}`.repeat(16))),
-    consistency: 1,
     labelOcrConfidence: 1,
     hasMacroLabel: true,
   });
@@ -223,7 +221,6 @@ test("fidélité : régime non détenu → plafonné à 80, mais non bloqué sur
     specs: fiveSlots,
     filled,
     images: filled.map((s, i) => photo(`p${i}`, s, `${i}`.repeat(16))),
-    consistency: 1,
     labelOcrConfidence: 1,
     hasMacroLabel: true,
   });
@@ -239,11 +236,10 @@ test("fidélité : sans macro de label, le texte ne crédite que la moitié", ()
     specs: fiveSlots,
     filled: fiveSlots.map((s) => s.id),
     images: fiveSlots.map((s, i) => photo(`p${i}`, s.id, `${i}`.repeat(16))),
-    consistency: 1,
     labelOcrConfidence: 1,
     hasMacroLabel: false,
   });
-  assert.equal(r.breakdown.text, 7.5);
+  assert.equal(r.breakdown.text, 12.5);
   assert.ok(r.score < 100);
 });
 
@@ -253,7 +249,6 @@ test("fidélité : planche pauvre → refus pour score insuffisant", () => {
     specs: fiveSlots,
     filled: ["face"],
     images: [photo("p0", "face", "0000000000000000", { width: 600, height: 600 })],
-    consistency: 0.2,
     labelOcrConfidence: 0,
     hasMacroLabel: false,
   });
@@ -305,7 +300,6 @@ test("buildPlan : planche complète, aucun message de refus", () => {
     regime: "detenu",
     images,
     labelOcrConfidence: 1,
-    consistency: 1,
   });
   assert.equal(plan.fidelity.gatePassed, true);
   assert.equal(refusalMessage(plan), undefined);

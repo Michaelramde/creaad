@@ -33,7 +33,7 @@ export interface PlanResult {
 }
 
 export function buildPlan(input: BuildPlanInput): PlanResult {
-  const slots = requiredSlots(input.category);
+  const slots = requiredSlots(input.category, input.regime);
 
   const selection = selectForSlots(input.images, slots);
   const hashed = input.images.filter(
@@ -46,7 +46,6 @@ export function buildPlan(input: BuildPlanInput): PlanResult {
     specs: slots,
     filled: selection.filled,
     images: selection.assignments.map((a) => a.image),
-    consistency: input.consistency ?? 0.5,
     labelOcrConfidence: input.labelOcrConfidence ?? 0,
     hasMacroLabel: selection.filled.includes("macro-label"),
   });

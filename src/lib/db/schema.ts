@@ -204,7 +204,7 @@ export const plans = pgTable(
     version: integer("version").notNull().default(1),
     fidelityScore: integer("fidelity_score").notNull(),
     breakdown: jsonb("breakdown")
-      .$type<{ resolution: number; coverage: number; consistency: number; text: number; consensus: number }>()
+      .$type<{ coverage: number; resolution: number; text: number; distinctSources: number }>()
       .notNull(),
     gatePassed: boolean("gate_passed").notNull(),
     gateReason: text("gate_reason"),
