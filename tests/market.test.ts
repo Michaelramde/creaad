@@ -161,6 +161,37 @@ test("statut : un angle prouvé localement n'est pas « importé »", () => {
 
 /* ── qualité des données ──────────────────────────────────────────────────── */
 
+test("statut : deux annonces ne suffisent pas à déclarer « en montée »", () => {
+  // Vélocité forte et deux annonceurs, mais seulement deux annonces :
+  // le médian et la vélocité n'ont pas de sens sur si peu.
+  assert.equal(
+    computeStatus({
+      local: { ads: 2, advertisers: ["a", "b"], medianDaysRunning: 5, velocity: 4 },
+    }),
+    "observed_unproven",
+  );
+});
+
+test("statut : deux annonces ne suffisent pas à déclarer « prouvé ici »", () => {
+  assert.equal(
+    computeStatus({
+      local: { ads: 2, advertisers: ["a", "b", "c"], medianDaysRunning: 90, velocity: null },
+    }),
+    "observed_unproven",
+  );
+});
+
+test("statut : l'import reste possible avec une seule annonce locale", () => {
+  // Ici la preuve vient du marché de référence, pas du volume local.
+  assert.equal(
+    computeStatus({
+      local: { ads: 1, advertisers: ["a"], medianDaysRunning: 5, velocity: null },
+      reference: proven(),
+    }),
+    "proven_elsewhere",
+  );
+});
+
 test("qualité : sous le seuil, aucune carte n'est publiée", () => {
   const ads = Array.from({ length: 10 }, (_, i) =>
     ad({ id: `q${i}`, advertiserId: `adv${i % 2}`, family: "urgence", daysAgo: 10 }),

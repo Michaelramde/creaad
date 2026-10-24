@@ -19,6 +19,8 @@ import type {
 import { ANGLE_FAMILIES } from "./types.ts";
 
 export const MIN_ADS_FOR_MATRIX = 15;
+/** En dessous, une famille ne peut pas dépasser « observé non prouvé ». */
+export const MIN_ADS_PER_FAMILY = 3;
 export const PROVEN_MIN_ADVERTISERS = 3;
 export const PROVEN_MIN_MEDIAN_DAYS = 45;
 export const RISING_MIN_RATIO = 1.5;
@@ -86,6 +88,11 @@ export function computeFamilyStats(
   const durations = ads.map((a) => daysRunning(a, now));
 
   const notes: string[] = [];
+  if (ads.length > 0 && ads.length < MIN_ADS_PER_FAMILY) {
+    notes.push(
+      `Échantillon trop mince (${ads.length} annonce${ads.length > 1 ? "s" : ""}) : statut plafonné à « observé ».`,
+    );
+  }
   if (ads.length > 0 && advertisers.length === 1) {
     notes.push("Un seul annonceur observé : ce n'est pas un marché, c'est un acteur.");
   } else if (ads.length >= 5) {
@@ -134,12 +141,19 @@ export function computeStatus(input: {
 }): AngleStatus {
   const { local, reference } = input;
 
-  if (isProven(local)) return "proven_here";
+  // Une famille à deux annonces peut sembler « en montée » par hasard :
+  // le médian et la vélocité n'y veulent rien dire. On plafonne le statut.
+  const enoughLocalEvidence = local.ads >= MIN_ADS_PER_FAMILY;
 
+  if (enoughLocalEvidence && isProven(local)) return "proven_here";
+
+  // L'import d'angle repose sur la preuve du marché de référence, pas sur
+  // le nombre d'annonces locales — qui est justement censé être nul.
   const refProven = reference ? isProven(reference) : false;
   if (local.advertisers.length <= 1 && refProven) return "proven_elsewhere";
 
   const rising =
+    enoughLocalEvidence &&
     local.velocity !== null &&
     local.velocity >= RISING_MIN_RATIO &&
     local.advertisers.length >= 2;
