@@ -385,6 +385,10 @@ export const adObservations = pgTable(
     productRef: text("product_ref"),
     /** Devise de l'annonce : proxy d'attribution géographique. */
     adCurrency: text("ad_currency"),
+    /** Visuel de l'annonce, pour vérifier qu'elle montre bien le produit. */
+    adImageUrl: text("ad_image_url"),
+    /** Similarité visuelle avec la photo du produit (0 → 1). */
+    productSimilarity: numeric("product_similarity", { precision: 4, scale: 3 }),
     url: text("url").notNull(),
     source: text("source").notNull().default("collector"),
     collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),

@@ -17,7 +17,13 @@ interface RawMetaAd {
   start_date?: number;
   end_date?: number;
   currency?: string;
-  snapshot?: { body?: { text?: string }; title?: string; link_url?: string };
+  snapshot?: {
+    body?: { text?: string };
+    title?: string;
+    link_url?: string;
+    images?: { original_image_url?: string; resized_image_url?: string }[];
+    videos?: { video_preview_image_url?: string }[];
+  };
 }
 
 export interface MetaAdHit {
@@ -30,6 +36,8 @@ export interface MetaAdHit {
   isActive: boolean;
   url: string;
   currency: string | null;
+  /** Visuel de l'annonce — sert à vérifier qu'elle montre bien le produit. */
+  imageUrl: string | null;
 }
 
 export interface MetaSearchOutcome {
@@ -86,6 +94,13 @@ export class MetaAdsSearch {
       if (!item.ad_archive_id) continue;
       const hook = item.snapshot?.body?.text ?? item.snapshot?.title ?? null;
 
+      // Le visuel : image de l'annonce, sinon vignette de la vidéo.
+      const firstImage =
+        item.snapshot?.images?.[0]?.original_image_url ??
+        item.snapshot?.images?.[0]?.resized_image_url ??
+        item.snapshot?.videos?.[0]?.video_preview_image_url ??
+        null;
+
       ads.push({
         adId: String(item.ad_archive_id),
         pageId: String(item.page_id ?? ""),
@@ -101,6 +116,7 @@ export class MetaAdsSearch {
         isActive: item.is_active === true,
         url: `https://www.facebook.com/ads/library/?id=${item.ad_archive_id}`,
         currency: item.currency ?? null,
+        imageUrl: firstImage,
       });
     }
 

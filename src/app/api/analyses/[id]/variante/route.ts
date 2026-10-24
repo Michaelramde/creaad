@@ -7,6 +7,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { analyses } from "@/lib/db/schema";
 import { findProductAds } from "@/lib/market/product-market";
+import { verifyProductAds } from "@/lib/market/verify-ads";
+import { env } from "@/lib/env";
 import { persistAnalysisOutcome } from "@/lib/pipeline/persist";
 import { repairCreativeKit } from "@/lib/pipeline/repair";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
@@ -139,6 +141,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             .update(analyses)
             .set({ marketScope: escalation.scope, marketNote: escalation.message, updatedAt: new Date() })
             .where(eq(analyses.id, analysis.id));
+
+          // Les annonces trouvées montrent-elles vraiment CE produit ?
+          if (escalation.ads > 0 && env.GEMINI_API_KEY && record.gallery[0]?.url) {
+            const verified = await verifyProductAds({
+              productRef: record.productId,
+              productImageUrl: record.gallery[0].url,
+              apiKey: env.GEMINI_API_KEY,
+            });
+            if (verified.checked > 0) {
+              await db
+                .update(analyses)
+                .set({
+                  marketNote: `${escalation.message} ${verified.confirmed}/${verified.checked} visuels confirment le produit.`,
+                  updatedAt: new Date(),
+                })
+                .where(eq(analyses.id, analysis.id));
+            }
+          }
         } catch (error) {
           console.warn("[variante] recherche produit échouée", error);
         }

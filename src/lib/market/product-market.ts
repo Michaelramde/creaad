@@ -153,6 +153,7 @@ async function saveAds(
         isActive: ad.isActive,
         productRef: input.productRef,
         adCurrency: ad.currency,
+        adImageUrl: ad.imageUrl,
         url: ad.url,
         source: "product-search",
       })),
