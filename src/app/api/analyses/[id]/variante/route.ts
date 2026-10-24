@@ -84,6 +84,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       userId: session.user.id,
       country: analysis.country,
       creditXof: analysis.reservedXof ?? 0,
+      phase: "produit",
       result,
     });
 
