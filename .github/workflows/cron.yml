@@ -1,0 +1,41 @@
+name: Tâches planifiées
+
+# Deux travaux qui doivent tourner même quand personne n'ouvre l'app :
+#  · réconciliation GeniusPay — un paiement peut être confirmé côté opérateur
+#    sans que son webhook nous parvienne ;
+#  · balayage du marché produit — l'élargissement tourne après la réponse, donc
+#    il peut être interrompu ; ce balayage reprend les analyses inachevées.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  cron:
+    name: Réconciliation et balayage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Appeler les tâches planifiées
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ vars.BASE_URL || 'https://creaad.site' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET absent des secrets du dépôt — les tâches ne peuvent pas s'authentifier."
+            exit 1
+          fi
+
+          for task in reconcile market-sweep; do
+            echo "→ $task"
+            code=$(curl -sS -o "/tmp/$task.json" -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              --max-time 280 \
+              "$BASE_URL/api/cron/$task")
+            echo "   HTTP $code · $(head -c 300 "/tmp/$task.json")"
+            if [ "$code" != "200" ]; then
+              echo "::error::$task a répondu $code"
+              exit 1
+            fi
+          done
