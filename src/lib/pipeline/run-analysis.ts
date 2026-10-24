@@ -8,6 +8,8 @@
 import { buildCreativeStep, type CreativeStepResult } from "./creative.ts";
 import { identifyProduct, type ProductIdentification } from "./identify-product.ts";
 import { imagesForSelection } from "../products/images.ts";
+import { getFreshRecord } from "../products/records.ts";
+import { needsVariantChoice } from "../products/types.ts";
 import { buildMatrixFor } from "../market/store.ts";
 import { buildPortfolio, type Portfolio } from "../market/portfolio.ts";
 import type { SaturationMatrix } from "../market/types.ts";
@@ -31,6 +33,8 @@ export interface RunAnalysisInput {
   publicImageUrl?: string;
   /** Coloris retenu — présent uniquement à la reprise. */
   variantSelection?: Record<string, string>;
+  /** Produit déjà identifié : la reprise ne relance aucune recherche payante. */
+  productRef?: string;
   analysisId?: string;
 }
 
@@ -66,7 +70,22 @@ export async function runAnalysis(
 
   /* ── produit exact : la voie payante, quand elle est disponible ──────── */
   let product: ProductIdentification | undefined;
-  if (providers.productPipeline && input.publicImageUrl) {
+
+  if (input.productRef) {
+    // Reprise : on relit la fiche en cache, sans repayer la moindre recherche.
+    const record = await getFreshRecord("aliexpress", input.productRef);
+    if (record) {
+      product = {
+        hit: { productId: record.productId, title: record.title, url: record.url, rank: 1, isBestMatch: true },
+        record,
+        facts: record.facts,
+        needsVariantChoice: needsVariantChoice(record.variantAxes),
+        warnings: [],
+        costUsd: 0,
+        cached: true,
+      };
+    }
+  } else if (providers.productPipeline && input.publicImageUrl) {
     try {
       const found = await identifyProduct(providers.productPipeline, {
         imageUrl: input.publicImageUrl,

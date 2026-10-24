@@ -137,7 +137,7 @@ export async function identifyProduct(
 
   if (!detail.cached && missingDimensions) {
     try {
-      const suppliers = await pipeline.suppliers.find(input.imageUrl, {
+      const suppliers = await pipeline.suppliers.find(record.title, {
         ...(input.analysisId ? { analysisId: input.analysisId } : {}),
       });
       costUsd += suppliers.costUsd;

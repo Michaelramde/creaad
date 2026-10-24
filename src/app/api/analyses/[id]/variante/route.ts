@@ -71,7 +71,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const result = await runAnalysis(providers, {
       country: analysis.country,
       photos: analysis.photos,
-      publicImageUrl: `${new URL(req.url).origin}/api/photos/${analysis.id}/0`,
+      productRef: analysis.productRef,
       variantSelection: parsed.data.selection,
       analysisId: analysis.id,
     });

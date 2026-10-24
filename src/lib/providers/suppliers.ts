@@ -1,9 +1,14 @@
 /**
- * Fournisseurs Alibaba / 1688 — la troisième source de corroboration.
+ * Fournisseurs 1688 / Alibaba — la troisième source de corroboration.
  *
- * Une fiche AliExpress dit « 30 ml ». Une usine Alibaba qui fabrique le même
- * design le dit aussi ? Alors on peut l'affirmer. C'est la seule source qui
- * apporte une **indépendance réelle** : elle ne recopie pas la fiche.
+ * Acteur retenu après comparaison mesurée : `zen-studio/1688-wholesale-scraper`
+ * (159 k exécutions, 911 actifs sur 7 jours, 99,3 % de succès, 5,0/5) coûte
+ * **0,0049 $** pour 20 fiches — contre **0,101 $** pour l'acteur de recherche
+ * par image, soit 20 fois plus cher pour la même information.
+ *
+ * Réserve honnête : les titres 1688 sont en chinois. Les **dimensions** restent
+ * exploitables (chiffres et unités), mais la matière ou la marque en français
+ * ne peuvent pas être corroborées par cette source.
  */
 import { checkBudget } from "../costs.ts";
 import { factsFromProduct } from "../products/parse-facts.ts";
@@ -11,14 +16,15 @@ import type { RawFacts } from "../products/corroborate.ts";
 import type { ApifyClient } from "./apify.ts";
 
 interface RawSupplier {
-  site?: string;
-  productId?: string;
+  offerId?: string;
   title?: string;
-  price?: number;
-  currency?: string;
-  minOrderQty?: string;
-  productUrl?: string;
-  supplierName?: string;
+  detailUrl?: string;
+  price?: { min?: number; max?: number; currency?: string };
+  quantityPrices?: unknown;
+  images?: string[];
+  province?: string;
+  city?: string;
+  orderCount?: number;
 }
 
 export interface SupplierListing {
@@ -50,12 +56,13 @@ export class ApifySuppliers {
   }
 
   /**
-   * Cherche le même design chez les fabricants, puis résume leurs faits.
+   * Cherche le même design chez les fabricants, à partir du **titre** du
+   * produit (l'acteur travaille par mots-clés, pas par image).
    * Une seule valeur par champ est retenue : celle qui revient le plus.
    */
   async find(
-    imageUrl: string,
-    options: { analysisId?: string; maxResults?: number } = {},
+    query: string,
+    options: { analysisId?: string } = {},
   ): Promise<SupplierOutcome> {
     const budget = await checkBudget();
     if (!budget.allowed) {
@@ -69,7 +76,7 @@ export class ApifySuppliers {
 
     const run = await this.client.run<RawSupplier>(
       this.actorId,
-      { imageUrl, maxResults: options.maxResults ?? 30 },
+      { queries: [query] },
       { step: "suppliers", ...(options.analysisId ? { analysisId: options.analysisId } : {}) },
     );
 
@@ -81,13 +88,11 @@ export class ApifySuppliers {
 
       const facts = factsFromProduct({ title: item.title, specs: {} });
       listings.push({
-        site: item.site ?? "alibaba",
+        site: "1688",
         title: item.title,
-        ...(typeof item.price === "number" ? { price: item.price } : {}),
-        ...(item.currency ? { currency: item.currency } : {}),
-        ...(item.minOrderQty ? { minOrderQty: item.minOrderQty } : {}),
-        ...(item.productUrl ? { url: item.productUrl } : {}),
-        ...(item.supplierName ? { supplier: item.supplierName } : {}),
+        ...(typeof item.price?.min === "number" ? { price: item.price.min } : {}),
+        ...(item.price?.currency ? { currency: item.price.currency } : {}),
+        ...(item.detailUrl ? { url: item.detailUrl } : {}),
         facts,
       });
 
