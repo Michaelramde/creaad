@@ -43,23 +43,20 @@ jobs:
           cache: npm
 
       - name: Dépendances
-        run: |
-          npm ci --ignore-scripts
-          npm i --no-save playwright playwright-extra puppeteer-extra-plugin-stealth
-          npx playwright install --with-deps chromium
+        run: npm ci --ignore-scripts
 
       - name: Rechercher les annonces
         env:
-          FB_STORAGE_STATE: ${{ secrets.FB_STORAGE_STATE }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         run: |
           mkdir -p .tmp
-          # L'Ad Library exige une session connectée. En CI, elle est fournie
-          # par le secret FB_STORAGE_STATE (généré par `npm run collect:login`).
-          if [ -z "$FB_STORAGE_STATE" ]; then
-            echo "::notice::FB_STORAGE_STATE absent — collecte Meta ignorée (session Facebook requise)."
+          # Voie retenue : acteur Apify (proxies résidentiels, sans compte Facebook).
+          # Notre propre navigateur reçoit une page _fb_noscript — abandonné.
+          if [ -z "$APIFY_TOKEN" ]; then
+            echo "::notice::APIFY_TOKEN absent — collecte Meta ignorée."
             exit 0
           fi
-          node scripts/collector.mjs --out=.tmp/ads.jsonl --max=10 --rotate
+          node scripts/collector/meta_apify.mjs --out=.tmp/ads.jsonl --max=20 --rotate
 
       - name: Écrire dans Neon
         env:
