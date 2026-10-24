@@ -8,6 +8,41 @@
 import { normalize } from "../matching/text.ts";
 import type { Category } from "../matching/types.ts";
 
+/**
+ * Synonymes anglais → nom canonique français.
+ *
+ * Les fiches fournisseur sont en anglais (« Messenger Bags Men's… ») alors que
+ * le lexique et la collecte sont en français. Sans cette table, tout produit
+ * importé tombait sur le repli « produit » — et donc sur un marché vide.
+ */
+const ENGLISH_NOUNS: { pattern: RegExp; noun: string; category: Category }[] = [
+  { pattern: /\b(bag|bags|purse|handbag|tote|backpack|messenger|sling|clutch)\b/, noun: "sac", category: "mode" },
+  { pattern: /\b(wig|wigs|closure|bundle|bundles|lace front)\b/, noun: "perruque", category: "cheveux" },
+  { pattern: /\b(earbuds|earbud|headphone|headphones|earphone|earphones|tws)\b/, noun: "ecouteur", category: "gadgets" },
+  { pattern: /\b(dress|dresses|gown)\b/, noun: "robe", category: "mode" },
+  { pattern: /\b(shoe|shoes|sneaker|sneakers|sandal|sandals|boot|boots)\b/, noun: "chaussure", category: "mode" },
+  { pattern: /\b(watch|watches|smartwatch)\b/, noun: "montre", category: "gadgets" },
+  { pattern: /\b(phone case|case for|shell)\b/, noun: "coque", category: "gadgets" },
+  { pattern: /\b(fan|fans)\b/, noun: "ventilateur", category: "gadgets" },
+  { pattern: /\b(power bank|charger|charging)\b/, noun: "batterie", category: "gadgets" },
+  { pattern: /\b(speaker|soundbox)\b/, noun: "enceinte", category: "gadgets" },
+  { pattern: /\b(serum|ampoule|essence)\b/, noun: "serum", category: "beaute" },
+  { pattern: /\b(cream|moisturizer|moisturiser|lotion)\b/, noun: "creme", category: "beaute" },
+  { pattern: /\b(soap|cleanser)\b/, noun: "savon", category: "beaute" },
+  { pattern: /\b(perfume|fragrance|parfum)\b/, noun: "parfum", category: "beaute" },
+  { pattern: /\b(body oil|hair oil|growth oil)\b/, noun: "huile", category: "beaute" },
+];
+
+/** « Men's » / « women's » : le catalogue distingue parfois les deux. */
+export type Gender = "masculin" | "feminin" | undefined;
+
+export function detectGender(text: string): Gender {
+  const n = normalize(text);
+  if (/\b(women|woman|female|ladies|lady|femme|fille|girl)\b/.test(n)) return "feminin";
+  if (/\b(men|man|male|gents|homme|garcon|boy)\b/.test(n)) return "masculin";
+  return undefined;
+}
+
 const CATEGORY_KEYWORDS: Record<Category, string[]> = {
   beaute: [
     "serum", "creme", "lotion", "huile", "parfum", "savon", "gel", "shampoing",
@@ -15,8 +50,8 @@ const CATEGORY_KEYWORDS: Record<Category, string[]> = {
     "anti taches", "eclaircissant", "hydratant", "nettoyant", "deodorant", "baume",
   ],
   cheveux: [
-    "perruque", "wig", "lace", "frontale", "extension", "meche", "tissage",
-    "closure", "bundle", "cran", "tresse", "huile capillaire", "serum capillaire",
+    "perruque", "frontale", "extension", "meche", "tissage",
+    "cran", "tresse", "huile capillaire", "serum capillaire",
   ],
   mode: [
     "robe", "chemise", "tshirt", "t-shirt", "pantalon", "jean", "jupe", "sac",
@@ -24,8 +59,8 @@ const CATEGORY_KEYWORDS: Record<Category, string[]> = {
     "montre", "lunettes", "bijou", "collier", "bracelet", "boucles",
   ],
   gadgets: [
-    "ecouteur", "casque", "chargeur", "power bank", "batterie", "lampe",
-    "ventilateur", "montre connectee", "smartwatch", "enceinte", "camera",
+    "ecouteur", "casque", "chargeur", "batterie", "lampe",
+    "ventilateur", "montre connectee", "enceinte", "camera",
     "support telephone", "cable", "adaptateur", "projecteur", "mini fer",
   ],
 };
@@ -73,6 +108,19 @@ export function detectNoun(text: string, category?: Category): string | undefine
       if (n.includes(w) && (!noun || w.length > noun.length)) noun = w;
     }
   }
+
+  // Fiches fournisseur en anglais : on traduit vers le nom canonique français,
+  // sans quoi tout produit importé retombait sur « produit ».
+  if (!noun) {
+    for (const entry of ENGLISH_NOUNS) {
+      if (category && entry.category !== category) continue;
+      if (entry.pattern.test(n)) {
+        noun = entry.noun;
+        break;
+      }
+    }
+  }
+
   return noun;
 }
 

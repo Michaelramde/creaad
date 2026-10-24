@@ -131,6 +131,9 @@ export const productRecords = pgTable(
     facts: jsonb("facts").$type<Facts>().notNull().default({}),
     images: jsonb("images").$type<PoolImage[]>().notNull().default([]),
     seller: jsonb("seller").$type<Record<string, unknown>>(),
+    /** Marché rattaché au produit : le routage n'est fait qu'une fois. */
+    archetypeSlug: text("archetype_slug"),
+    archetypeSource: text("archetype_source"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },

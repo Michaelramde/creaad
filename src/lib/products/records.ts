@@ -52,6 +52,10 @@ export async function getFreshRecord(
     facts: row.facts,
     images: row.images,
     ...(row.seller ? { seller: row.seller as Record<string, unknown> } : {}),
+    ...(row.archetypeSlug ? { archetypeSlug: row.archetypeSlug } : {}),
+    ...(row.archetypeSource
+      ? { archetypeSource: row.archetypeSource as "lexique" | "routeur" | "aucun" }
+      : {}),
     fetchedAt: row.fetchedAt,
     expiresAt: row.expiresAt,
   };
@@ -78,6 +82,8 @@ export async function upsertRecord(record: ProductRecord): Promise<void> {
       facts: record.facts,
       images: record.images,
       seller: record.seller ?? null,
+      archetypeSlug: record.archetypeSlug ?? null,
+      archetypeSource: record.archetypeSource ?? null,
       expiresAt,
       fetchedAt: new Date(),
     })
@@ -93,6 +99,8 @@ export async function upsertRecord(record: ProductRecord): Promise<void> {
         facts: record.facts,
         images: record.images,
         seller: record.seller ?? null,
+        archetypeSlug: record.archetypeSlug ?? null,
+        archetypeSource: record.archetypeSource ?? null,
         expiresAt,
         fetchedAt: new Date(),
       },

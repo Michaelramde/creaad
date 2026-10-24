@@ -81,6 +81,9 @@ export interface ProductRecord {
   facts: Facts;
   images: PoolImage[];
   seller?: Record<string, unknown>;
+  /** Marché auquel ce produit a été rattaché — calculé une seule fois. */
+  archetypeSlug?: string;
+  archetypeSource?: "lexique" | "routeur" | "aucun";
   fetchedAt: Date;
   expiresAt: Date;
 }

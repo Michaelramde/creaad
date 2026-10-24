@@ -8,9 +8,68 @@
 import { buildCreativeStep, type CreativeStepResult } from "./creative.ts";
 import { identifyProduct, type ProductIdentification } from "./identify-product.ts";
 import { imagesForSelection } from "../products/images.ts";
-import { getFreshRecord } from "../products/records.ts";
+import { getFreshRecord, upsertRecord } from "../products/records.ts";
 import { needsVariantChoice } from "../products/types.ts";
+import { routeArchetype } from "../archetype/route.ts";
+import { loadCatalogue } from "../archetype/catalogue.ts";
+import type { Archetype } from "../archetype/extract.ts";
+import type { Providers } from "../providers/types.ts";
 import { buildMatrixFor } from "../market/store.ts";
+
+/**
+ * Rattache le produit à un archétype du catalogue.
+ *
+ * Le calcul est fait **une seule fois par produit** : le résultat est écrit
+ * dans la fiche, donc la reprise et les analyses suivantes n'y touchent plus.
+ */
+async function resolveProductArchetype(
+  providers: Providers,
+  product: ProductIdentification,
+  category: Archetype["category"],
+  warnings: string[],
+): Promise<Archetype | null> {
+  const record = product.record;
+
+  // Déjà routé lors d'une analyse précédente.
+  if (record.archetypeSlug) {
+    return {
+      slug: record.archetypeSlug,
+      label: record.archetypeSlug.replace(/-/g, " "),
+      category,
+      noun: record.archetypeSlug.split("-").slice(1, -1).join(" ") || "produit",
+    };
+  }
+
+  const catalogue = await loadCatalogue();
+  const text = [record.title, ...Object.values(record.specs)].filter(Boolean).join(" ");
+
+  const routed = await routeArchetype({
+    text,
+    category,
+    catalogue,
+    ...(providers.writer
+      ? { ask: (prompt: string) => providers.writer!.write(prompt) }
+      : {}),
+  });
+
+  if (!routed.slug) {
+    warnings.push(routed.reason ?? "Aucun marché connu ne correspond à ce produit.");
+    await upsertRecord({ ...record, archetypeSource: "aucun" });
+    return null;
+  }
+
+  const entry = catalogue.find((candidate) => candidate.slug === routed.slug);
+  await upsertRecord({ ...record, archetypeSlug: routed.slug, archetypeSource: routed.source });
+  record.archetypeSlug = routed.slug;
+  record.archetypeSource = routed.source;
+
+  return {
+    slug: routed.slug,
+    label: entry?.label ?? routed.slug.replace(/-/g, " "),
+    category,
+    noun: routed.slug.split("-").slice(1, -1).join(" ") || "produit",
+  };
+}
 import { buildPortfolio, type Portfolio } from "../market/portfolio.ts";
 import type { SaturationMatrix } from "../market/types.ts";
 import type { Category, Regime } from "../matching/types.ts";
@@ -19,7 +78,6 @@ import {
   type IdentifyOutput,
 } from "./identify.ts";
 import { buildPlanStep, type PlanStepResult, type UserPhoto } from "./plan.ts";
-import type { Providers } from "../providers/types.ts";
 
 export interface RunAnalysisInput {
   /** Catégorie de secours : le pipeline la déduit des photos et du texte. */
@@ -110,11 +168,15 @@ export async function runAnalysis(
     return { identify, warnings, blocked: true };
   }
 
-  // Catégorie réellement reconnue (texte + image) : elle pilote les vues
-  // requises et le ton des créas, pas le choix fait à la main.
-  const category = product?.record.facts.brand
-    ? identify.archetype.category
-    : identify.archetype.category;
+  /* ── marché : on rattache le produit à un archétype RÉELLEMENT collecté ── */
+  // Sans ça, un titre anglais produisait « mode-produit » — un mot que
+  // personne ne collecte, donc zéro annonce et aucune section « Convaincre ».
+  const category = identify.archetype.category;
+
+  if (product) {
+    const routed = await resolveProductArchetype(providers, product, category, warnings);
+    if (routed) identify.archetype = routed;
+  }
 
   /**
    * Photos de la planche : celles du produit et de la variante choisie.
