@@ -77,7 +77,14 @@ export function ProductGallery({
   }, [images]);
 
   const kept = useMemo(
-    () => images.filter((image) => !image.variantValueId || sold.includes(image.variantValueId)),
+    () =>
+      images.filter(
+        (image) =>
+          !image.variantValueId ||
+          // Une image de mesures part toujours : elle porte les dimensions.
+          image.kind === "spec" ||
+          sold.includes(image.variantValueId),
+      ),
     [images, sold],
   );
 

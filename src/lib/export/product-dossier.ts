@@ -35,12 +35,18 @@ export function imageFolder(image: PoolImage): string {
 }
 
 /**
- * Images retenues : celles sans coloris (mesures, marketing, sans produit)
- * plus celles des coloris cochés. `undefined` = tout garder.
+ * Images retenues : celles sans coloris, celles qui portent des **mesures**
+ * (même si elles montrent un coloris — ce sont elles qui portent les
+ * dimensions), et celles des coloris cochés. `undefined` = tout garder.
  */
 export function selectImages(images: readonly PoolImage[], selected?: readonly string[]): PoolImage[] {
   if (!selected) return [...images];
-  return images.filter((image) => !image.variantValueId || selected.includes(image.variantValueId));
+  return images.filter(
+    (image) =>
+      !image.variantValueId ||
+      image.kind === "spec" ||
+      selected.includes(image.variantValueId),
+  );
 }
 
 export function colourLabel(axes: readonly VariantAxis[], valueId?: string): string {
