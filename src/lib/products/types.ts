@@ -21,6 +21,14 @@ export interface PoolImage {
   origin: ImageOrigin;
   width?: number;
   height?: number;
+  /** Coloris représenté, quand il a pu être identifié. */
+  variantValueId?: string;
+  /**
+   * `technique` = tableau de mesures, schéma, dimensions : ces images ne
+   * montrent pas le produit sous un angle, mais elles portent des faits.
+   * Elles restent affichées quel que soit le coloris choisi.
+   */
+  kind?: "produit" | "technique";
 }
 
 export interface VariantValue {
