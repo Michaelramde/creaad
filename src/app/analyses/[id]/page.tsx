@@ -119,21 +119,24 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   let archetypeLabel: string | null = null;
 
   /**
-   * Marché du produit d'abord : s'il a ses propres annonces, ce sont elles
-   * qui parlent — pas celles du marché générique de son type.
+   * Marché du produit : il **s'ajoute** au marché de l'archétype, il ne le
+   * remplace pas. Un produit n'a souvent que 5 annonces — les remplacer par
+   * 45 annonces de marché générique serait une perte d'information.
    */
+  let productPortfolio: PortfolioEntry[] | null = null;
   let productMarket: { adsFound: number; scope: string | null; note: string | null } | null = null;
 
   if (row.productRef && row.status === "livree") {
     const built = await buildMatrixForProduct(row.productRef, row.country);
-    if (built && built.matrix.dataQuality.adsFound >= 3) {
-      portfolio = buildPortfolio(built.matrix).entries as PortfolioEntry[];
-      marketMeta = { adsFound: built.matrix.dataQuality.adsFound, confidence: built.matrix.dataQuality.confidence };
-      productMarket = {
-        adsFound: built.matrix.dataQuality.adsFound,
-        scope: row.marketScope,
-        note: row.marketNote,
-      };
+    if (built && built.matrix.dataQuality.adsFound >= 5) {
+      productPortfolio = buildPortfolio(built.matrix).entries as PortfolioEntry[];
+      if (productPortfolio.length > 0) {
+        productMarket = {
+          adsFound: built.matrix.dataQuality.adsFound,
+          scope: row.marketScope,
+          note: row.marketNote,
+        };
+      }
     }
   }
 
@@ -161,7 +164,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
 
       // Le marché de l'archétype ne sert que de repli : s'il a déjà été
       // remplacé par celui du produit, on ne l'écrase pas.
-      if (cache && !portfolio) {
+      if (cache) {
         const content = cache.content as { portfolio?: { entries?: PortfolioEntry[] } };
         portfolio = content.portfolio?.entries ?? null;
         marketMeta = { adsFound: cache.adsFound, confidence: cache.confidence };
@@ -301,19 +304,41 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         </Card>
       )}
 
-      {/* 2 · Convaincre */}
-      {portfolio && portfolio.length > 0 && (
+      {/* 2a · Convaincre — le produit */}
+      {productPortfolio && productPortfolio.length > 0 && (
         <section className="mt-6">
-          <Kicker>
-            {productMarket
-              ? `Convaincre · ce produit (${productMarket.adsFound} annonces)`
-              : `Convaincre · le marché du ${archetypeLabel ?? "produit"} (${marketMeta?.adsFound} annonces)`}
-          </Kicker>
-
+          <Kicker>Convaincre · ce produit ({productMarket?.adsFound} annonces)</Kicker>
           {productMarket?.note && (
             <p className="mt-1 text-[11px] leading-relaxed text-stone-500">{productMarket.note}</p>
           )}
+          <div className="mt-2 space-y-2">
+            {productPortfolio.slice(0, 6).map((entry) => (
+              <Card key={`p-${entry.family}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="text-sm font-semibold">
+                    {ANGLE_LABELS[entry.family as AngleFamily] ?? entry.family}
+                  </h2>
+                  <Badge tone={ACTION_TONE[entry.action] ?? "muted"}>
+                    {ACTION_LABEL[entry.action] ?? entry.action}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-[11px] text-stone-500">
+                  {entry.figures.advertisers} annonceur{entry.figures.advertisers > 1 ? "s" : ""} ·{" "}
+                  {Math.round(entry.figures.medianDaysRunning)} j de diffusion médiane
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-stone-700">{entry.rationale}</p>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
 
+      {/* 2b · Convaincre — le marché du type de produit */}
+      {portfolio && portfolio.length > 0 && (
+        <section className="mt-6">
+          <Kicker>
+            Convaincre · le marché du {archetypeLabel ?? "produit"} ({marketMeta?.adsFound} annonces)
+          </Kicker>
           <div className="mt-2 space-y-2">
             {portfolio.slice(0, 6).map((entry) => (
               <Card key={entry.family}>

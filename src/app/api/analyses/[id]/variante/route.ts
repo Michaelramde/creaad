@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { analyses } from "@/lib/db/schema";
 import { findProductAds } from "@/lib/market/product-market";
 import { persistAnalysisOutcome } from "@/lib/pipeline/persist";
+import { repairCreativeKit } from "@/lib/pipeline/repair";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
 import { createProviders } from "@/lib/providers";
 import { getFreshRecord } from "@/lib/products/records";
@@ -114,6 +115,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
       after(async () => {
         try {
+          // Le kit production peut avoir échoué pendant la livraison : on le
+          // rejoue avant tout, c'est ce qui manque au commerçant.
+          const repair = await repairCreativeKit(providers, analysis.id);
+          if (!repair.repaired && repair.reason && repair.reason !== "Kit déjà présent.") {
+            console.warn("[variante] kit production non réparé :", repair.reason);
+          }
+
           const escalation = await findProductAds(
             {
               productRef: record.productId,
