@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { ConfirmArticle } from "@/components/confirm-article";
 import { CopyButton } from "@/components/copy-button";
+import { SafeImage } from "@/components/safe-image";
 import { Badge, Card, Kicker, type Tone } from "@/components/ui";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -185,12 +186,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       {match?.candidate?.title && (
         <Card className="mt-3 flex gap-3">
           {candidateImage && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <SafeImage
               src={candidateImage}
-              alt=""
-              referrerPolicy="no-referrer"
-              loading="lazy"
               className="h-16 w-16 shrink-0 rounded-xl border border-stone-200 object-cover"
             />
           )}
@@ -233,13 +230,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             <div className={`mt-3 grid gap-2 ${images.length < 3 ? "grid-cols-2" : "grid-cols-3"}`}>
               {images.map((image) => (
                 <figure key={image.id} className="overflow-hidden rounded-xl border border-stone-200">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={image.url}
-                    alt={image.slot}
-                    referrerPolicy="no-referrer"
-                    className="aspect-square w-full object-cover"
-                  />
+                  <SafeImage src={image.url} alt={image.slot} className="aspect-square w-full object-cover" />
                   <figcaption className="px-1.5 py-1 text-[10px] text-stone-500">
                     {image.slot.replace("-", " ")}
                   </figcaption>
