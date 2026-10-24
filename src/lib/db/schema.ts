@@ -257,6 +257,11 @@ export const analyses = pgTable(
     productRef: text("product_ref"),
     /** Coloris retenus par le commerçant — pilote la galerie et l'export. */
     selectedVariants: jsonb("selected_variants").$type<string[]>(),
+    /**
+     * Corrections manuelles du coloris d'une image, par URL.
+     * `null` = « aucun coloris ». Prime sur le classement automatique.
+     */
+    imageCorrections: jsonb("image_corrections").$type<Record<string, string | null>>(),
     /** Axes de variantes proposés quand l'analyse attend un choix. */
     pendingVariants: jsonb("pending_variants").$type<VariantAxis[]>(),
     /** Provenance du marché produit : pays · zone · monde · archetype. */

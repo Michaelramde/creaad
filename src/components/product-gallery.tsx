@@ -39,53 +39,67 @@ const TABS: { id: Tab; label: string }[] = [
 /**
  * La galerie — le benefice principal de l'etape 1.
  *
- * Deux gestes distincts, pour qu'ils se comprennent :
+ * Trois choses, volontairement distinctes :
  *   1. « Quels coloris vends-tu ? » — une decision, enregistree, qui pilote
  *      la galerie ET le contenu de l'export.
  *   2. « Toutes les photos » — une consultation, par nature d'image.
- *
- * Les images sans coloris (mesures, marketing, sans produit) restent toujours
- * incluses : c'est d'elles que viennent les dimensions.
+ *   3. Corriger le coloris d'une image — la decision du commercant prime sur
+ *      le classement automatique, qui hesite sur les teintes proches.
  */
 export function ProductGallery({
   images,
   colours,
   initialSelected,
+  initialCorrections,
   analysisId,
   exportHref,
 }: {
   images: GalleryImage[];
   colours: GalleryColour[];
   initialSelected?: string[];
+  initialCorrections?: Record<string, string | null>;
   analysisId?: string;
   exportHref?: string;
 }) {
   const [sold, setSold] = useState<string[]>(
     initialSelected ?? colours.map((colour) => colour.valueId),
   );
+  const [corrections, setCorrections] = useState<Record<string, string | null>>(
+    initialCorrections ?? {},
+  );
   const [tab, setTab] = useState<Tab>("tout");
   const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const resolved = useMemo(() => {
+    const colourOf = (image: GalleryImage): string | undefined => {
+      if (Object.prototype.hasOwnProperty.call(corrections, image.url)) {
+        return corrections[image.url] ?? undefined;
+      }
+      return image.variantValueId;
+    };
+    return images.map((image) => ({ ...image, resolved: colourOf(image) }));
+  }, [images, corrections]);
+
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
-    for (const image of images) {
-      if (image.variantValueId) map[image.variantValueId] = (map[image.variantValueId] ?? 0) + 1;
+    for (const image of resolved) {
+      if (image.resolved) map[image.resolved] = (map[image.resolved] ?? 0) + 1;
     }
     return map;
-  }, [images]);
+  }, [resolved]);
 
   const kept = useMemo(
     () =>
-      images.filter(
+      resolved.filter(
         (image) =>
-          !image.variantValueId ||
+          !image.resolved ||
           // Une image de mesures part toujours : elle porte les dimensions.
           image.kind === "spec" ||
-          sold.includes(image.variantValueId),
+          sold.includes(image.resolved),
       ),
-    [images, sold],
+    [resolved, sold],
   );
 
   const visible = useMemo(() => {
@@ -114,6 +128,17 @@ export function ProductGallery({
         .catch(() => undefined)
         .finally(() => setSaving(false));
     }
+  }
+
+  function correct(url: string, valueId: string | null) {
+    setCorrections((prev) => ({ ...prev, [url]: valueId }));
+    if (!analysisId) return;
+
+    void fetch(`/api/analyses/${analysisId}/image-color`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, valueId }),
+    }).catch(() => undefined);
   }
 
   const selection = (
@@ -201,6 +226,8 @@ export function ProductGallery({
     </a>
   ) : null;
 
+  const current = open !== null ? visible[open] : null;
+
   return (
     <div className="space-y-4">
       {selection}
@@ -220,7 +247,7 @@ export function ProductGallery({
             <Tile
               key={image.url}
               image={image}
-              colours={colours}
+              colourName={colours.find((c) => c.valueId === image.resolved)?.name}
               onClick={() => {
                 setExpanded(true);
                 setOpen(index);
@@ -264,7 +291,7 @@ export function ProductGallery({
                 <Tile
                   key={image.url}
                   image={image}
-                  colours={colours}
+                  colourName={colours.find((c) => c.valueId === image.resolved)?.name}
                   onClick={() => setOpen(index)}
                 />
               ))}
@@ -273,7 +300,7 @@ export function ProductGallery({
         </div>
       )}
 
-      {open !== null && visible[open] && (
+      {current && open !== null && (
         <div className="fixed inset-0 z-50 flex flex-col bg-black/95 p-4" role="presentation">
           <div className="flex items-center justify-between text-xs text-white/70">
             <span>
@@ -286,27 +313,56 @@ export function ProductGallery({
 
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={visible[open]?.url}
+            src={current.url}
             alt=""
             referrerPolicy="no-referrer"
-            className="mx-auto mt-4 max-h-[76vh] w-auto rounded-xl object-contain"
+            className="mx-auto mt-3 max-h-[56vh] w-auto rounded-xl object-contain"
           />
 
-          <div className="mt-auto flex justify-between gap-3 pt-4">
-            <button
-              type="button"
-              onClick={() => setOpen((open - 1 + visible.length) % visible.length)}
-              className="flex-1 rounded-xl bg-white/10 py-3 text-sm text-white"
-            >
-              ← Précédente
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen((open + 1) % visible.length)}
-              className="flex-1 rounded-xl bg-white/10 py-3 text-sm text-white"
-            >
-              Suivante →
-            </button>
+          <div className="mt-auto">
+            <p className="text-[11px] text-white/60">Cette image montre :</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {colours.map((colour) => (
+                <button
+                  key={colour.valueId}
+                  type="button"
+                  onClick={() => correct(current.url, colour.valueId)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] ${
+                    current.resolved === colour.valueId
+                      ? "bg-white text-stone-900"
+                      : "bg-white/15 text-white"
+                  }`}
+                >
+                  {colour.name.replace(/^\d+\s*/, "")}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => correct(current.url, null)}
+                className={`rounded-full px-2.5 py-1 text-[11px] ${
+                  current.resolved ? "bg-white/15 text-white" : "bg-white text-stone-900"
+                }`}
+              >
+                aucun coloris
+              </button>
+            </div>
+
+            <div className="mt-3 flex justify-between gap-3 pb-2">
+              <button
+                type="button"
+                onClick={() => setOpen((open - 1 + visible.length) % visible.length)}
+                className="flex-1 rounded-xl bg-white/10 py-3 text-sm text-white"
+              >
+                ← Précédente
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen((open + 1) % visible.length)}
+                className="flex-1 rounded-xl bg-white/10 py-3 text-sm text-white"
+              >
+                Suivante →
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -316,14 +372,13 @@ export function ProductGallery({
 
 function Tile({
   image,
-  colours,
+  colourName,
   onClick,
 }: {
-  image: GalleryImage;
-  colours: GalleryColour[];
+  image: GalleryImage & { resolved?: string };
+  colourName?: string;
   onClick: () => void;
 }) {
-  const colour = colours.find((c) => c.valueId === image.variantValueId);
   const nature = NATURE[image.kind ?? "sans_produit"] ?? NATURE.sans_produit;
 
   return (
@@ -343,7 +398,7 @@ function Tile({
       <span
         className={`absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium text-white ${nature.badge}`}
       >
-        {colour ? colour.name.replace(/^\d+\s*/, "") : nature.label}
+        {colourName ? colourName.replace(/^\d+\s*/, "") : nature.label}
       </span>
     </button>
   );

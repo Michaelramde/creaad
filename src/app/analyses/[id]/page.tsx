@@ -341,6 +341,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             }))}
             colours={variantColours}
             initialSelected={row.selectedVariants ?? undefined}
+            initialCorrections={row.imageCorrections ?? undefined}
             analysisId={row.id}
             exportHref={`/api/analyses/${row.id}/export`}
           />

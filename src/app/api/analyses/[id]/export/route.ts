@@ -33,6 +33,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       id: analyses.id,
       productRef: analyses.productRef,
       selectedVariants: analyses.selectedVariants,
+      imageCorrections: analyses.imageCorrections,
       status: analyses.status,
     })
     .from(analyses)
@@ -58,7 +59,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     url: record.url,
     specs: record.specs as Record<string, string>,
     facts: record.facts as DossierSource["facts"],
-    images: record.images as PoolImage[],
+    // La correction du commerçant prime sur le classement automatique.
+    images: (record.images as PoolImage[]).map((image) => {
+      const corrected = analysis.imageCorrections ?? {};
+      if (!Object.prototype.hasOwnProperty.call(corrected, image.url)) return image;
+      const valueId = corrected[image.url];
+      const { variantValueId, ...rest } = image;
+      void variantValueId;
+      return valueId ? { ...rest, variantValueId: valueId } : rest;
+    }),
     variantAxes: record.variantAxes as VariantAxis[],
     reviews: record.reviews as ProductReview[],
   };
