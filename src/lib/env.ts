@@ -50,6 +50,7 @@ const schema = z.object({
   ACTOR_IMAGE_SEARCH: z.string().default("piotrv1001~aliexpress-image-search-scraper"),
   ACTOR_PRODUCT_DETAIL: z.string().default("zen-studio~aliexpress-scraper"),
   ACTOR_SUPPLIERS: z.string().default("zen-studio~1688-wholesale-scraper"),
+  ACTOR_META_ADS: z.string().default("jmlp~meta-ad-library-scraper"),
 
   CREDIT_XOF: z.coerce.number().int().positive().default(1000),
   MIN_TOPUP_XOF: z.coerce.number().int().positive().default(5000),

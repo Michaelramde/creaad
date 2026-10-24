@@ -17,6 +17,7 @@ import { ApifyClient } from "./apify.ts";
 import { ApifyImageSearch } from "./image-search.ts";
 import { ApifyProductDetail } from "./product-detail.ts";
 import { ApifySuppliers } from "./suppliers.ts";
+import { MetaAdsSearch } from "./meta-ads.ts";
 import type { ProductPipeline } from "../pipeline/identify-product.ts";
 import { GeminiCreativeWriter } from "./gemini-writer.ts";
 import { VisualIndexSource } from "./visual-index.ts";
@@ -87,6 +88,7 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
             imageSearch: new ApifyImageSearch(apify, env.ACTOR_IMAGE_SEARCH),
             detail: new ApifyProductDetail(apify, env.ACTOR_PRODUCT_DETAIL),
             suppliers: new ApifySuppliers(apify, env.ACTOR_SUPPLIERS),
+            metaAds: new MetaAdsSearch(apify, env.ACTOR_META_ADS),
             ocr,
           },
         }

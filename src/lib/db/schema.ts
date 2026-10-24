@@ -378,6 +378,10 @@ export const adObservations = pgTable(
     startDate: timestamp("start_date", { withTimezone: true }),
     endDate: timestamp("end_date", { withTimezone: true }),
     isActive: boolean("is_active").notNull().default(true),
+    /** Produit fournisseur dont cette annonce fait la promotion. */
+    productRef: text("product_ref"),
+    /** Devise de l'annonce : proxy d'attribution géographique. */
+    adCurrency: text("ad_currency"),
     url: text("url").notNull(),
     source: text("source").notNull().default("collector"),
     collectedAt: timestamp("collected_at", { withTimezone: true }).notNull().defaultNow(),
@@ -385,7 +389,24 @@ export const adObservations = pgTable(
   (t) => [
     uniqueIndex("ux_ad_obs_url").on(t.platform, t.url),
     index("ix_ad_obs_lookup").on(t.archetypeSlug, t.country, t.platform),
+    index("ix_ad_obs_product").on(t.productRef, t.country),
   ],
+);
+
+/** Cache des recherches Meta — positif et négatif. */
+export const metaQueries = pgTable(
+  "meta_queries",
+  {
+    hash: text("hash").primaryKey(),
+    query: text("query").notNull(),
+    scope: text("scope").notNull(),
+    countries: jsonb("countries").$type<string[]>().notNull(),
+    adsFound: integer("ads_found").notNull(),
+    costUsd: numeric("cost_usd", { precision: 10, scale: 6 }).notNull().default("0"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("ix_meta_queries_expiry").on(t.expiresAt)],
 );
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -444,6 +465,10 @@ export const pipelineCosts = pgTable(
     tokensOut: integer("tokens_out"),
     costUsd: numeric("cost_usd", { precision: 10, scale: 6 }).notNull().default("0"),
     durationMs: integer("duration_ms"),
+    /** Vrai quand le montant a été estimé faute de facturation lisible. */
+    estimated: boolean("estimated").notNull().default(false),
+    /** Identifiant d'exécution chez le fournisseur, pour réconciliation. */
+    externalId: text("external_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("ix_costs_analysis").on(t.analysisId)],

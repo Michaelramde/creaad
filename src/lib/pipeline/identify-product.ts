@@ -17,6 +17,7 @@ import { upsertRecord } from "../products/records.ts";
 import type { ApifyImageSearch, ImageSearchHit } from "../providers/image-search.ts";
 import type { ApifyProductDetail } from "../providers/product-detail.ts";
 import type { ApifySuppliers } from "../providers/suppliers.ts";
+import type { MetaAdsSearch } from "../providers/meta-ads.ts";
 import type { OcrProvider } from "../providers/types.ts";
 
 /**
@@ -68,6 +69,8 @@ export interface ProductPipeline {
   imageSearch: ApifyImageSearch;
   detail: ApifyProductDetail;
   suppliers: ApifySuppliers;
+  /** Recherche d'annonces Meta à la demande, pour le marché produit. */
+  metaAds?: MetaAdsSearch;
   /** Lecture des tableaux de mesures présents dans la galerie. */
   ocr?: OcrProvider;
 }

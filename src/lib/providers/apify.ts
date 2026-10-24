@@ -33,6 +33,14 @@ export class ApifyClient {
     this.token = token;
   }
 
+  private async fetchRun(runId: string): Promise<RunInfo> {
+    const res = await fetch(`${BASE}/actor-runs/${runId}?token=${encodeURIComponent(this.token)}`, {
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error(`Apify : suivi impossible (HTTP ${res.status})`);
+    return ((await res.json()) as { data: RunInfo }).data;
+  }
+
   async run<T>(
     actorId: string,
     input: unknown,
@@ -53,24 +61,34 @@ export class ApifyClient {
       throw new Error(`Apify ${actorId} → HTTP ${startRes.status} : ${detail.slice(0, 200)}`);
     }
 
-    const started_ = ((await startRes.json()) as { data: RunInfo }).data;
+    let run = ((await startRes.json()) as { data: RunInfo }).data;
 
-    let run = started_;
     while (run.status === "READY" || run.status === "RUNNING") {
       if (Date.now() - started > timeoutMs) {
         throw new Error(`Apify ${actorId} : délai dépassé (${Math.round(timeoutMs / 1000)} s)`);
       }
       await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+      run = await this.fetchRun(run.id);
+    }
 
-      const pollRes = await fetch(`${BASE}/actor-runs/${run.id}?token=${encodeURIComponent(this.token)}`, {
-        signal: AbortSignal.timeout(20_000),
-      });
-      if (!pollRes.ok) throw new Error(`Apify : suivi impossible (HTTP ${pollRes.status})`);
-      run = ((await pollRes.json()) as { data: RunInfo }).data;
+    /**
+     * La facturation n'est écrite qu'**après** la fin de l'exécution : relire
+     * tout de suite donne 0 alors que l'appel a bien été payé. On laisse
+     * quelques instants, puis on marque la ligne « estimée » pour que la
+     * dépense ne disparaisse jamais du plafond.
+     */
+    let costUsd = run.usageTotalUsd ?? 0;
+    for (let attempt = 0; attempt < 4 && costUsd === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      try {
+        run = await this.fetchRun(run.id);
+        costUsd = run.usageTotalUsd ?? 0;
+      } catch {
+        break;
+      }
     }
 
     const durationMs = run.stats?.durationMillis ?? Date.now() - started;
-    const costUsd = run.usageTotalUsd ?? 0;
 
     await logPipelineCost({
       ...(options.analysisId ? { analysisId: options.analysisId } : {}),
@@ -79,6 +97,8 @@ export class ApifyClient {
       model: actorId,
       costUsd,
       durationMs,
+      estimated: costUsd === 0,
+      externalId: run.id,
     });
 
     if (run.status !== "SUCCEEDED") {

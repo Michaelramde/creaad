@@ -18,6 +18,10 @@ export interface CostEntry {
   model?: string;
   costUsd: number;
   durationMs?: number;
+  /** Vrai si le montant est une estimation, pas la facture réelle. */
+  estimated?: boolean;
+  /** Identifiant d'exécution chez le fournisseur (réconciliation). */
+  externalId?: string;
 }
 
 export async function logPipelineCost(entry: CostEntry): Promise<void> {
@@ -29,6 +33,8 @@ export async function logPipelineCost(entry: CostEntry): Promise<void> {
       model: entry.model ?? null,
       costUsd: entry.costUsd.toFixed(6),
       durationMs: entry.durationMs ?? null,
+      estimated: entry.estimated ?? false,
+      externalId: entry.externalId ?? null,
     });
   } catch (error) {
     // La comptabilité ne doit jamais faire échouer une analyse.
