@@ -8,7 +8,7 @@ import { CopyButton } from "@/components/copy-button";
 import { Badge, Card, Kicker, type Tone } from "@/components/ui";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { analyses, archetypes, creativeKits, marketKits, planImages, plans } from "@/lib/db/schema";
+import { analyses, archetypes, creativeKits, marketKits, planImages, plans, products } from "@/lib/db/schema";
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
@@ -101,13 +101,22 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
 
   let portfolio: PortfolioEntry[] | null = null;
   let marketMeta: { adsFound: number; confidence: string } | null = null;
+  let archetypeLabel: string | null = null;
+
+  const [product] = await db
+    .select({ name: products.name })
+    .from(products)
+    .where(eq(products.id, row.productId))
+    .limit(1);
 
   if (row.archetypeSlug) {
     const [archetype] = await db
-      .select({ id: archetypes.id })
+      .select({ id: archetypes.id, label: archetypes.label })
       .from(archetypes)
       .where(eq(archetypes.slug, row.archetypeSlug))
       .limit(1);
+
+    archetypeLabel = archetype?.label ?? null;
 
     if (archetype) {
       const [cache] = await db
@@ -127,14 +136,18 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   const identified = match?.accepted === true;
   const candidateImage = match?.candidate?.images?.[0]?.url ?? null;
 
+  // Le nom saisi par le commerçant d'abord : « Mode Sac » ne veut rien dire.
+  const title =
+    product?.name?.trim() ||
+    archetypeLabel ||
+    (row.archetypeSlug ? row.archetypeSlug.replace(/-/g, " ") : "Produit");
+
   return (
     <main className="mx-auto max-w-md px-5 pb-20 pt-10">
       <div className="flex items-start justify-between gap-3">
         <div>
           <Kicker>Analyse</Kicker>
-          <h1 className="mt-1 text-xl font-semibold capitalize">
-            {row.archetypeSlug ? row.archetypeSlug.replace(/-/g, " ") : "Produit"}
-          </h1>
+          <h1 className="mt-1 text-xl font-semibold">{title}</h1>
         </div>
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
@@ -214,7 +227,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
           </div>
 
           {images.length > 0 && (
-            <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className={`mt-3 grid gap-2 ${images.length < 3 ? "grid-cols-2" : "grid-cols-3"}`}>
               {images.map((image) => (
                 <figure key={image.id} className="overflow-hidden rounded-xl border border-stone-200">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

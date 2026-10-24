@@ -171,8 +171,39 @@ export async function POST(req: Request) {
       }
     }
 
-    /* ── planche refusée : rien n'est livré, rien n'est débité ─────────── */
+    /* ── planche refusée : rien n'est débité, mais les angles sont offerts ── */
     if (result.blocked) {
+      let preview: unknown = null;
+
+      if (result.market?.matrix.publishable) {
+        const { matrix, portfolio } = result.market;
+        const archetypeId = await ensureArchetype({
+          slug: result.identify.archetype.slug,
+          label: result.identify.archetype.label,
+          category: result.identify.archetype.category,
+        });
+        await putMarketKit({
+          archetypeId,
+          country: input.country,
+          content: { portfolio, dataQuality: matrix.dataQuality },
+          adsFound: matrix.dataQuality.adsFound,
+          confidence: matrix.dataQuality.confidence,
+        });
+
+        preview = {
+          publishable: true,
+          adsFound: matrix.dataQuality.adsFound,
+          confidence: matrix.dataQuality.confidence,
+          angles: portfolio.entries.slice(0, 6).map((e) => ({
+            family: e.family,
+            action: e.action,
+            advertisers: e.figures.advertisers,
+            medianDays: Math.round(e.figures.medianDaysRunning),
+            rationale: e.rationale,
+          })),
+        };
+      }
+
       await releaseAnalysis({
         userId: session.user.id,
         analysisId: analysis.id,
@@ -197,6 +228,7 @@ export async function POST(req: Request) {
         archetype: result.identify.archetype,
         match: summarizeMatch(result.identify.match),
         plan: summarizePlan(plan),
+        market: preview,
         warnings: result.warnings,
         charged: false,
       });

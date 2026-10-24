@@ -72,12 +72,7 @@ export async function runAnalysis(
   });
   warnings.push(...plan.warnings);
 
-  // Planche refusée : on s'arrête, le commerçant sait quoi reprendre.
-  if (!plan.plan.fidelity.gatePassed) {
-    return { identify, plan, warnings, blocked: true };
-  }
-
-  /* ── marché (calcul pur sur les annonces déjà collectées) ────────────── */
+  /* ── marché : ne dépend que de l'archétype, donc calculé avant tout refus ── */
   const { matrix } = await buildMatrixFor(identify.archetype.slug, input.country);
   const portfolio = buildPortfolio(matrix);
 
@@ -85,7 +80,13 @@ export async function runAnalysis(
     warnings.push(
       `Données marché insuffisantes (${matrix.dataQuality.adsFound} annonces) — aucun angle n'est publié.`,
     );
-    return { identify, plan, market: { matrix, portfolio }, warnings, blocked: false };
+  }
+
+  // Planche refusée : on s'arrête avant la production, mais on rend quand même
+  // les angles du marché — ils portent sur l'archétype, pas sur ces photos.
+  // Priver le commerçant de tout après 30 s d'attente n'a aucune raison.
+  if (!plan.plan.fidelity.gatePassed) {
+    return { identify, plan, market: { matrix, portfolio }, warnings, blocked: true };
   }
 
   /* ── production : angles, hooks, scripts, prompts ────────────────────── */
