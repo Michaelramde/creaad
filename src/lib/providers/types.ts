@@ -14,6 +14,11 @@ import type { Archetype } from "../archetype/extract.ts";
 export interface OcrProvider {
   readonly name: string;
   extract(imageUrl: string): Promise<OcrResult>;
+  /**
+   * Version groupée : un seul appel pour toutes les photos.
+   * Un appel par image multiplie la latence et la consommation de quota.
+   */
+  extractMany?(imageUrls: readonly string[]): Promise<OcrResult[]>;
 }
 
 export interface AttributeProvider {

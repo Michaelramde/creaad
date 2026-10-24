@@ -23,8 +23,36 @@ if (!photo) {
   process.exit(1);
 }
 
+/** Le commerçant photographie plusieurs angles : on prend la galerie du produit. */
+async function gallery(url: string, limit = 5): Promise<string[]> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept-Language": "fr-FR,fr;q=0.9",
+      },
+      signal: AbortSignal.timeout(25_000),
+    });
+    const html = await res.text();
+    const urls = [...html.matchAll(/https:\/\/ae-pic-a1\.aliexpress-media\.com\/kf\/[A-Za-z0-9._-]+\.(?:jpg|png|webp)/g)]
+      .map((m) => m[0])
+      .filter((u) => !/_(\d+x\d+|q\d+)\./.test(u));
+    return [...new Set(urls)].slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
+const galleryUrls = await gallery(listing.url);
+const photos = (galleryUrls.length > 0 ? galleryUrls : [photo]).map((url) => ({
+  url,
+  width: 1200,
+  height: 1200,
+}));
+
 console.log(`produit de référence : ${listing.title?.slice(0, 60)}`);
-console.log(`image                : ${photo.slice(0, 70)}…\n`);
+console.log(`photos du commerçant : ${photos.length} (galerie du produit)\n`);
 
 const providers = createProviders();
 console.log(
@@ -38,7 +66,7 @@ const result = await runAnalysis(providers, {
   category: "beaute",
   regime: "non_detenu",
   country: "CI",
-  photos: [{ url: photo, width: 1200, height: 1200 }],
+  photos,
   userText: listing.title ?? undefined,
 });
 

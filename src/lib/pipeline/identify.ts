@@ -38,18 +38,30 @@ export async function identifyArticle(
 ): Promise<IdentifyOutput> {
   const warnings: string[] = [];
 
-  /* 1 — OCR : un échec par image ne fait pas échouer l'étape. */
-  const ocrResults = await Promise.all(
-    input.imageUrls.map(async (url) => {
-      try {
-        return await providers.ocr.extract(url);
-      } catch (error) {
-        warnings.push(`OCR indisponible sur une image (${providers.ocr.name})`);
-        console.warn("[identify] OCR échoué", error);
-        return { text: "", confidence: 0, provider: providers.ocr.name };
-      }
-    }),
-  );
+  /* 1 — OCR : un appel groupé quand le fournisseur le permet. */
+  let ocrResults: { text: string; confidence: number }[];
+
+  if (providers.ocr.extractMany) {
+    try {
+      ocrResults = await providers.ocr.extractMany(input.imageUrls);
+    } catch (error) {
+      warnings.push(`OCR indisponible (${providers.ocr.name})`);
+      console.warn("[identify] OCR échoué", error);
+      ocrResults = input.imageUrls.map(() => ({ text: "", confidence: 0 }));
+    }
+  } else {
+    ocrResults = await Promise.all(
+      input.imageUrls.map(async (url) => {
+        try {
+          return await providers.ocr.extract(url);
+        } catch (error) {
+          warnings.push(`OCR indisponible sur une image (${providers.ocr.name})`);
+          console.warn("[identify] OCR échoué", error);
+          return { text: "", confidence: 0 };
+        }
+      }),
+    );
+  }
 
   const ocrText = ocrResults
     .map((r) => r.text)

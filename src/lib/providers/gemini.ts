@@ -112,20 +112,62 @@ export class GeminiOcrProvider implements OcrProvider {
   }
 
   async extract(imageUrl: string): Promise<OcrResult> {
-    const image = await toInlinePart(imageUrl);
+    const [result] = await this.extractMany([imageUrl]);
+    return result as OcrResult;
+  }
 
-    const text = await generate(this.apiKey, this.model, [
-      image,
-      {
-        text:
-          "Transcris **exactement** le texte lisible sur ce produit (étiquette, emballage, " +
-          "mentions). Ne traduis pas, ne reformule pas, ne devine pas. " +
-          "Rends une ligne par bloc de texte, sans commentaire. " +
-          "Si aucun texte n'est lisible, réponds une chaîne vide.",
+  /** Un appel pour toutes les photos — le quota est la ressource rare. */
+  async extractMany(imageUrls: readonly string[]): Promise<OcrResult[]> {
+    const urls = imageUrls.slice(0, 6);
+    if (urls.length === 0) return [];
+
+    const parts: unknown[] = [];
+    for (let i = 0; i < urls.length; i += 1) {
+      parts.push({ text: `IMAGE ${i} :` });
+      const inline = await toInlinePart(urls[i] as string).catch(() => null);
+      if (inline) parts.push(inline);
+    }
+
+    parts.push({
+      text:
+        "Transcris **exactement** le texte lisible sur chaque produit (étiquette, emballage, " +
+        "mentions). Ne traduis pas, ne reformule pas, ne devine pas. " +
+        `Réponds en JSON : un objet par image, index ${urls.map((_, i) => i).join(", ")}, ` +
+        "avec le texte brut (chaîne vide si rien n'est lisible).",
+    });
+
+    const raw = await generate(this.apiKey, this.model, parts, {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          pages: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: { index: { type: "NUMBER" }, text: { type: "STRING" } },
+              required: ["index", "text"],
+            },
+          },
+        },
+        required: ["pages"],
       },
-    ]);
+    });
 
-    return { text, confidence: text.length > 0 ? 1 : 0, provider: this.name };
+    const byIndex = new Map<number, string>();
+    try {
+      const parsed = JSON.parse(raw) as { pages?: { index?: number; text?: string }[] };
+      for (const page of parsed.pages ?? []) {
+        if (typeof page.index === "number") byIndex.set(page.index, page.text ?? "");
+      }
+    } catch {
+      // Réponse illisible : on renvoie des textes vides, jamais du contenu inventé.
+    }
+
+    return urls.map((_, index) => {
+      const text = byIndex.get(index) ?? "";
+      return { text, confidence: text.length > 0 ? 1 : 0, provider: this.name };
+    });
   }
 }
 
