@@ -16,7 +16,7 @@ try {
   userEmbedding = centroid(vectors);
   console.log(`centroïde : ${userEmbedding ? "oui" : "NON"}`);
 } catch (error) {
-  console.log(`échec embeddings : ${error.message}`);
+  console.log(`échec embeddings : ${(error as Error).message}`);
 }
 
 const archetype = buildArchetype({ text: "Sac Jeep 3 en 1", fallbackCategory: "mode" });
@@ -40,6 +40,6 @@ for (const source of providers.sources) {
       );
     }
   } catch (error) {
-    console.log(`${source.name} : échec ${error.message}`);
+    console.log(`${source.name} : échec ${(error as Error).message}`);
   }
 }
