@@ -83,4 +83,6 @@ export interface Providers {
     readonly name: string;
     write(prompt: string): Promise<string>;
   };
+  /** Chaîne d'identification payante (recherche par image + fiche + fournisseurs). */
+  productPipeline?: import("../pipeline/identify-product.ts").ProductPipeline;
 }

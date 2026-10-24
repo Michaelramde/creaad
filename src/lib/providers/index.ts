@@ -13,6 +13,11 @@ import {
 import { GeminiAttributeProvider, GeminiOcrProvider } from "./gemini.ts";
 import { GeminiSlotClassifier, GeminiVisualComparator } from "./gemini-vision.ts";
 import { GeminiEmbeddingProvider } from "./gemini-embedding.ts";
+import { ApifyClient } from "./apify.ts";
+import { ApifyImageSearch } from "./image-search.ts";
+import { ApifyProductDetail } from "./product-detail.ts";
+import { ApifySuppliers } from "./suppliers.ts";
+import type { ProductPipeline } from "../pipeline/identify-product.ts";
 import { GeminiCreativeWriter } from "./gemini-writer.ts";
 import { VisualIndexSource } from "./visual-index.ts";
 import { MistralOcrProvider } from "./mistral-ocr.ts";
@@ -67,6 +72,8 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
     new AliExpressHttpSource(),
   ];
 
+  const apify = env.APIFY_TOKEN ? new ApifyClient(env.APIFY_TOKEN) : null;
+
   return {
     ocr,
     attributes,
@@ -74,6 +81,16 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
       overrides.embeddings ??
       (env.GEMINI_API_KEY ? new GeminiEmbeddingProvider(env.GEMINI_API_KEY) : new NoopEmbeddingProvider()),
     sources: overrides.sources ?? defaultSources,
+    ...(apify
+      ? {
+          productPipeline: {
+            imageSearch: new ApifyImageSearch(apify, env.ACTOR_IMAGE_SEARCH),
+            detail: new ApifyProductDetail(apify, env.ACTOR_PRODUCT_DETAIL),
+            suppliers: new ApifySuppliers(apify, env.ACTOR_SUPPLIERS),
+            ocr,
+          },
+        }
+      : {}),
     ...(env.GEMINI_API_KEY
       ? {
           visual:
