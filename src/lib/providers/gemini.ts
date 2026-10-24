@@ -40,7 +40,7 @@ interface InlinePart {
   inline_data: { mime_type: string; data: string };
 }
 
-async function toInlinePart(url: string): Promise<InlinePart> {
+export async function toInlinePart(url: string): Promise<InlinePart> {
   if (url.startsWith("data:")) {
     const match = /^data:([^;]+);base64,(.*)$/s.exec(url);
     if (!match) throw new Error("Data URL malformée");
@@ -58,35 +58,47 @@ interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
 }
 
-async function generate(
+export async function generate(
   apiKey: string,
   model: string,
   parts: unknown[],
   generationConfig?: Record<string, unknown>,
 ): Promise<string> {
-  const res = await fetch(`${endpointFor(model)}?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts }],
-      ...(generationConfig ? { generationConfig } : {}),
-    }),
-    cache: "no-store",
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts }],
+    ...(generationConfig ? { generationConfig } : {}),
   });
 
-  if (!res.ok) {
+  // 429 et 503 sont fréquents chez Gemini (« high demand ») : on réessaie
+  // avant de déclarer l'étape en échec.
+  const retryable = new Set([429, 500, 503]);
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const res = await fetch(`${endpointFor(model)}?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      cache: "no-store",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+
+    if (res.ok) {
+      const payload = (await res.json()) as GeminiResponse;
+      return (payload.candidates?.[0]?.content?.parts ?? [])
+        .map((p) => p.text ?? "")
+        .join("")
+        .trim();
+    }
+
     const detail = await res.text().catch(() => "");
-    throw new Error(`Gemini → HTTP ${res.status} : ${detail.slice(0, 200)}`);
+    lastError = new Error(`Gemini → HTTP ${res.status} : ${detail.slice(0, 200)}`);
+
+    if (!retryable.has(res.status) || attempt === 2) throw lastError;
+    await new Promise((r) => setTimeout(r, 1_500 * 2 ** attempt));
   }
 
-  const body = (await res.json()) as GeminiResponse;
-  const text = (body.candidates?.[0]?.content?.parts ?? [])
-    .map((p) => p.text ?? "")
-    .join("")
-    .trim();
-
-  return text;
+  throw lastError ?? new Error("Gemini : échec inconnu");
 }
 
 export class GeminiOcrProvider implements OcrProvider {

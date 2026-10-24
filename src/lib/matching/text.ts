@@ -37,6 +37,22 @@ export function jaccard(a: Set<string>, b: Set<string>): number {
 }
 
 /**
+ * Coefficient d'inclusion (Szymkiewicz–Simpson) : part du plus petit
+ * ensemble retrouvée dans l'autre.
+ *
+ * Indispensable ici : le commerçant écrit « sérum vitamine c » quand
+ * l'annonce titre 20 mots. Jaccard donnerait 0,1 alors que tout le texte
+ * du commerçant est bien présent — on conclurait à tort à une absence de
+ * correspondance.
+ */
+export function overlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter += 1;
+  return inter / Math.min(a.size, b.size);
+}
+
+/**
  * Similarité cosinus. Renvoie `null` si l'un des vecteurs est vide ou
  * de norme nulle : absence de mesure, pas mesure de zéro.
  */

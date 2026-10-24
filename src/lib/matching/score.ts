@@ -9,7 +9,7 @@
  * Deux conditions pour accepter : `score >= 70` ET `couverture >= 50 %`.
  * Une composante sans preuve rapporte 0 — elle ne compense jamais par du neutre.
  */
-import { centroid, clamp01, cosine, jaccard, normalize, tokenSet } from "./text.ts";
+import { centroid, clamp01, cosine, normalize, overlap, tokenSet } from "./text.ts";
 import type {
   Attributes,
   ComponentScore,
@@ -28,9 +28,17 @@ export const MIN_COVERAGE = 0.5;
 export const VISUAL_FLOOR = 0.45;
 export const VISUAL_CEIL = 0.85;
 
-/** Bornes de calibration du recouvrement OCR. */
-export const OCR_FLOOR = 0.15;
-export const OCR_CEIL = 0.6;
+/** Bornes de calibration du recouvrement texte (coefficient d'inclusion). */
+export const OCR_FLOOR = 0.3;
+export const OCR_CEIL = 0.85;
+
+/**
+ * Bornes quand la similarité visuelle vient d'un modèle de vision (score 0→1)
+ * et non d'un cosinus d'embeddings. Calibrées plus haut : un modèle qui dit
+ * « même produit » à 0,8 est plus affirmatif qu'un cosinus à 0,8.
+ */
+export const VISION_FLOOR = 0.5;
+export const VISION_CEIL = 0.9;
 
 const COLOR_SYNONYMS: Record<string, string> = {
   noir: "black", black: "black",
@@ -65,6 +73,17 @@ const unknown = (max: number, detail: string): ComponentScore => ({
 export interface MatchInput {
   userText: string;
   userEmbedding?: Embedding;
+  /**
+   * Similarité visuelle déjà évaluée par un modèle de vision (0 → 1).
+   * Utilisée à la place du cosinus quand aucun embedding n'est disponible.
+   */
+  visualScore?: number;
+  /**
+   * Correspondance de texte jugée par un modèle (0 → 1). Indispensable quand
+   * l'annonce et le commerçant ne parlent pas la même langue
+   * (« vitamin » / « vitamine », « face » / « visage »).
+   */
+  textScore?: number;
   userAttributes?: Attributes;
   userVariant?: Variant;
   candidate: ListingCandidate;
@@ -78,30 +97,51 @@ export function computeMatch(input: MatchInput): MatchResult {
   /* ── visuel ───────────────────────────────────────────────────────────── */
   const candidateVec = candidate.embedding ?? centroid(input.candidateEmbeddings ?? []);
   const sim = cosine(input.userEmbedding, candidateVec);
+
   const visual: ComponentScore =
-    sim === null
-      ? unknown(WEIGHTS.visual, "aucun embedding exploitable")
-      : {
+    input.visualScore !== undefined
+      ? {
           points:
-            WEIGHTS.visual * clamp01((sim - VISUAL_FLOOR) / (VISUAL_CEIL - VISUAL_FLOOR)),
+            WEIGHTS.visual *
+            clamp01((input.visualScore - VISION_FLOOR) / (VISION_CEIL - VISION_FLOOR)),
           max: WEIGHTS.visual,
           evidence: true,
-          detail: `cosinus ${sim.toFixed(3)}`,
-        };
+          detail: `vision ${input.visualScore.toFixed(2)}`,
+        }
+      : sim === null
+        ? unknown(WEIGHTS.visual, "aucun embedding exploitable")
+        : {
+            points:
+              WEIGHTS.visual * clamp01((sim - VISUAL_FLOOR) / (VISUAL_CEIL - VISUAL_FLOOR)),
+            max: WEIGHTS.visual,
+            evidence: true,
+            detail: `cosinus ${sim.toFixed(3)}`,
+          };
 
-  /* ── OCR ──────────────────────────────────────────────────────────────── */
-  const userTokens = tokenSet(input.userText);
-  const listingTokens = tokenSet(`${candidate.title} ${candidate.description ?? ""}`);
-  const jac = jaccard(userTokens, listingTokens);
-  const hasOcr = userTokens.size > 0 && listingTokens.size > 0;
-  const ocr: ComponentScore = !hasOcr
-    ? unknown(WEIGHTS.ocr, "texte utilisateur ou annonce vide")
-    : {
-        points: WEIGHTS.ocr * clamp01((jac - OCR_FLOOR) / (OCR_CEIL - OCR_FLOOR)),
-        max: WEIGHTS.ocr,
-        evidence: true,
-        detail: `jaccard ${jac.toFixed(3)}`,
-      };
+  /* ── texte (OCR / saisie) ─────────────────────────────────────────────── */
+  let ocr: ComponentScore;
+
+  if (input.textScore !== undefined) {
+    ocr = {
+      points: WEIGHTS.ocr * clamp01((input.textScore - OCR_FLOOR) / (OCR_CEIL - OCR_FLOOR)),
+      max: WEIGHTS.ocr,
+      evidence: true,
+      detail: `texte jugé ${input.textScore.toFixed(2)}`,
+    };
+  } else {
+    const userTokens = tokenSet(input.userText);
+    const listingTokens = tokenSet(`${candidate.title} ${candidate.description ?? ""}`);
+    const covered = overlap(userTokens, listingTokens);
+    const hasOcr = userTokens.size > 0 && listingTokens.size > 0;
+    ocr = !hasOcr
+      ? unknown(WEIGHTS.ocr, "texte utilisateur ou annonce vide")
+      : {
+          points: WEIGHTS.ocr * clamp01((covered - OCR_FLOOR) / (OCR_CEIL - OCR_FLOOR)),
+          max: WEIGHTS.ocr,
+          evidence: true,
+          detail: `inclusion ${covered.toFixed(3)}`,
+        };
+  }
 
   /* ── attributs (4 critères, 5 points chacun) ──────────────────────────── */
   const userAttrs = input.userAttributes ?? {};
@@ -185,10 +225,19 @@ export function computeMatch(input: MatchInput): MatchResult {
   return { score, coverage, components, accepted, gateReason, candidate };
 }
 
+export type MatchBase = Omit<MatchInput, "candidate" | "candidateEmbeddings" | "visualScore" | "textScore">;
+
+/** Résultat d'un modèle comparant le produit de référence à une annonce. */
+export interface CandidateAssessment {
+  visual: number;
+  text: number;
+}
+
 /** Classe les candidats du meilleur au moins bon, puis applique le seuil. */
 export function rankCandidates(
-  base: Omit<MatchInput, "candidate" | "candidateEmbeddings">,
+  base: MatchBase,
   candidates: readonly ListingCandidate[],
+  assessments?: ReadonlyMap<string, CandidateAssessment>,
 ): MatchResult[] {
   return candidates
     .map((candidate) =>
@@ -196,6 +245,8 @@ export function rankCandidates(
         ...base,
         candidate,
         candidateEmbeddings: candidate.embedding ? [candidate.embedding] : [],
+        visualScore: assessments?.get(candidate.externalId)?.visual,
+        textScore: assessments?.get(candidate.externalId)?.text,
       }),
     )
     .sort((a, b) => {
@@ -206,10 +257,11 @@ export function rankCandidates(
 
 /** Meilleur candidat, ou refus explicite si la liste est vide. */
 export function pickBest(
-  base: Omit<MatchInput, "candidate" | "candidateEmbeddings">,
+  base: MatchBase,
   candidates: readonly ListingCandidate[],
+  assessments?: ReadonlyMap<string, CandidateAssessment>,
 ): MatchResult {
-  const ranked = rankCandidates(base, candidates);
+  const ranked = rankCandidates(base, candidates, assessments);
   const best = ranked[0];
   if (best) return best;
 

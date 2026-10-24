@@ -75,7 +75,7 @@ export default function NewAnalysisPage() {
           category,
           regime,
           country,
-          imageUrls: images.map((i) => i.dataUrl),
+          images: images.map((i) => ({ url: i.dataUrl, width: i.width, height: i.height })),
           variantLabel: variantLabel.trim() || undefined,
           userText: userText.trim() || undefined,
         }),
@@ -86,7 +86,7 @@ export default function NewAnalysisPage() {
         setNeedsTopup(true);
         return;
       }
-      if (!res.ok) throw new Error(data.error ?? "L'analyse a échoué.");
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "L'analyse a échoué.");
 
       router.push(`/analyses/${data.analysisId}`);
     } catch (e) {

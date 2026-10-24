@@ -4,13 +4,14 @@
  */
 import { env } from "../env.ts";
 import { AliExpressAdapter } from "./aliexpress.ts";
+import { AliExpressHttpSource } from "./aliexpress-http.ts";
 import {
-  EmptySourceAdapter,
   LocalOcrProvider,
   NoopAttributeProvider,
   NoopEmbeddingProvider,
 } from "./defaults.ts";
 import { GeminiAttributeProvider, GeminiOcrProvider } from "./gemini.ts";
+import { GeminiSlotClassifier, GeminiVisualComparator } from "./gemini-vision.ts";
 import { MistralOcrProvider } from "./mistral-ocr.ts";
 import type {
   AttributeProvider,
@@ -47,10 +48,10 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
       : new NoopAttributeProvider());
 
   // Sources d'annonces : la première qui répond alimente l'appariement.
-  // Sans clé AliExpress, on garde une source vide — le pipeline bloquera
-  // proprement plutôt que d'inventer un candidat.
-  const defaultSources: SourceAdapter[] =
-    env.ALIEXPRESS_APP_KEY && env.ALIEXPRESS_APP_SECRET
+  // AliExpress en HTTP ne demande ni clé ni navigateur ; l'API affiliée,
+  // si elle est configurée, prend le relais en premier (plus structurée).
+  const defaultSources: SourceAdapter[] = [
+    ...(env.ALIEXPRESS_APP_KEY && env.ALIEXPRESS_APP_SECRET
       ? [
           new AliExpressAdapter(
             env.ALIEXPRESS_APP_KEY,
@@ -58,13 +59,25 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
             env.ALIEXPRESS_TRACKING_ID,
           ),
         ]
-      : [new EmptySourceAdapter()];
+      : []),
+    new AliExpressHttpSource(),
+  ];
 
   return {
     ocr,
     attributes,
     embeddings: overrides.embeddings ?? new NoopEmbeddingProvider(),
     sources: overrides.sources ?? defaultSources,
+    ...(env.GEMINI_API_KEY
+      ? {
+          visual:
+            overrides.visual ??
+            new GeminiVisualComparator(env.GEMINI_API_KEY, env.GEMINI_MODEL),
+          slots:
+            overrides.slots ??
+            new GeminiSlotClassifier(env.GEMINI_API_KEY, env.GEMINI_MODEL),
+        }
+      : {}),
   };
 }
 

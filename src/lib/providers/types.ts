@@ -45,4 +45,21 @@ export interface Providers {
   attributes: AttributeProvider;
   embeddings: EmbeddingProvider;
   sources: SourceAdapter[];
+  /** Comparateur produit (vision + texte). Optionnel : sans lui, l'appariement reste textuel. */
+  visual?: {
+    readonly name: string;
+    compare(
+      userImages: readonly string[],
+      userText: string,
+      candidates: readonly { id: string; imageUrl?: string; title: string }[],
+    ): Promise<Map<string, { visual: number; text: number }>>;
+  };
+  /** Classificateur d'emplacements (quelle vue est cette photo). */
+  slots?: {
+    readonly name: string;
+    classify(
+      imageUrls: readonly string[],
+      slots: readonly { id: string; label: string }[],
+    ): Promise<Map<number, string | null>>;
+  };
 }

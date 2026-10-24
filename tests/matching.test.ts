@@ -58,6 +58,24 @@ test("correspondance parfaite → 100, acceptée", () => {
   assert.equal(r.gateReason, "ACCEPTED");
 });
 
+test("l'inclusion rattrape l'asymétrie entre une saisie courte et un titre long", () => {
+  // Cas réel : le commerçant écrit trois mots, l'annonce en titre vingt.
+  // Jaccard s'effondrerait ; l'inclusion voit que tout est présent.
+  const r = computeMatch({
+    userText: "serum vitamine c",
+    candidate: candidate({
+      title:
+        "Vitamin C Serum for Face Whitening Facial Serum Hyaluronic Acid Anti Aging 30ml",
+      attributes: {},
+      variant: {},
+      description: "serum visage vitamine c éclat",
+      embedding: undefined,
+    }),
+  });
+  assert.ok(r.components.ocr.points > 15, `points OCR trop bas : ${r.components.ocr.points}`);
+  assert.match(r.components.ocr.detail, /inclusion/);
+});
+
 test("sans aucune preuve : score 0, couverture 0, refus pour preuve insuffisante", () => {
   const r = computeMatch({
     userText: "",

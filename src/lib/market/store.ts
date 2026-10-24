@@ -4,7 +4,7 @@
 import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { adObservations } from "@/lib/db/schema";
+import { adObservations, archetypes } from "@/lib/db/schema";
 
 import { ingestAds, type IngestReport, type RawAdRow } from "./ingest.ts";
 import { buildMatrix } from "./saturation.ts";
@@ -13,6 +13,38 @@ import type { SaturationMatrix } from "./types.ts";
 export interface SaveResult {
   inserted: number;
   updated: number;
+}
+
+/** Crée l'archétype s'il n'existe pas, et renvoie son identifiant. */
+export async function ensureArchetype(input: {
+  slug: string;
+  label: string;
+  category: "beaute" | "cheveux" | "mode" | "gadgets";
+}): Promise<string> {
+  const [existing] = await db
+    .select({ id: archetypes.id })
+    .from(archetypes)
+    .where(eq(archetypes.slug, input.slug))
+    .limit(1);
+
+  if (existing) return existing.id;
+
+  const [created] = await db
+    .insert(archetypes)
+    .values({ slug: input.slug, label: input.label, category: input.category })
+    .onConflictDoNothing()
+    .returning({ id: archetypes.id });
+
+  if (created) return created.id;
+
+  const [again] = await db
+    .select({ id: archetypes.id })
+    .from(archetypes)
+    .where(eq(archetypes.slug, input.slug))
+    .limit(1);
+
+  if (!again) throw new Error(`Archétype introuvable : ${input.slug}`);
+  return again.id;
 }
 
 /** Upsert idempotent : la même annonce vue deux fois n'est comptée qu'une fois. */

@@ -67,13 +67,9 @@ export async function identifyArticle(
   const archetype = buildArchetype({ text: corpus, fallbackCategory: input.category });
 
   /* 3 — Attributs et embeddings utilisateur (peuvent être vides). */
-  let attributes: Attributes = {};
-  try {
-    attributes = await providers.attributes.describe(input.imageUrls);
-  } catch (error) {
-    warnings.push(`Attributs indisponibles (${providers.attributes.name})`);
-    console.warn("[identify] attributs échoués", error);
-  }
+  // Une absence de données est acceptable ; une panne du fournisseur ne l'est
+  // pas : elle produirait un score faussement bas. On la laisse remonter.
+  const attributes: Attributes = await providers.attributes.describe(input.imageUrls);
 
   let embeddings: Embedding[] = [];
   try {
@@ -98,6 +94,21 @@ export async function identifyArticle(
   }
 
   /* 5 — Appariement. */
+  let assessments: Map<string, { visual: number; text: number }> | undefined;
+  if (providers.visual && candidates.length > 0) {
+    // Même raisonnement : un comparateur en panne ne doit pas se traduire
+    // par « produit non reconnu ».
+    assessments = await providers.visual.compare(
+      input.imageUrls,
+      corpus,
+      candidates.map((c) => ({
+        id: c.externalId,
+        imageUrl: c.images[0]?.url,
+        title: c.title,
+      })),
+    );
+  }
+
   const match = pickBest(
     {
       userText: corpus,
@@ -106,6 +117,7 @@ export async function identifyArticle(
       userVariant: compactVariant(parseVariantLabel(input.variantLabel)),
     },
     candidates,
+    assessments,
   );
 
   if (candidates.length === 0) {
