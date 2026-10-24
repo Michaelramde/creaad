@@ -1,17 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { adObservations, analyses } from "@/lib/db/schema";
-import { enrichMarket } from "@/lib/market/enrich";
-import { findProductAds } from "@/lib/market/product-market";
-import { verifyProductAds } from "@/lib/market/verify-ads";
-import { env } from "@/lib/env";
+import { analyses } from "@/lib/db/schema";
 import { persistAnalysisOutcome } from "@/lib/pipeline/persist";
-import { repairCreativeKit } from "@/lib/pipeline/repair";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
 import { createProviders } from "@/lib/providers";
 import { getFreshRecord } from "@/lib/products/records";
@@ -93,120 +88,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
 
     /**
-     * Recherche des annonces **de ce produit** — après la réponse.
-     *
-     * L'échelle peut enchaîner trois appels et dépasser la minute : la faire
-     * attendre au commerçant n'a aucun sens alors que le kit archétype est
-     * déjà prêt. On la lance derrière, elle enrichit `ad_observations`, et la
-     * page se rafraîchit avec les angles du produit.
-     *
-     * On lit l'archétype sur **l'analyse** : la fiche locale a été lue avant
-     * le routage et peut encore être vide à cet instant.
+     * Étape 1 terminée : le dossier produit est livré et débité.
+     * L' étude de marché est une **seconde demande**, facturée séparément,
+     * déclenchée par `POST /api/analyses/:id/marche`.
      */
-    // Relecture : l'archétype vient d'être résolu pendant la livraison.
-    const [fresh] = await db
-      .select({ archetypeSlug: analyses.archetypeSlug })
-      .from(analyses)
-      .where(eq(analyses.id, analysis.id))
-      .limit(1);
-
-    const archetypeSlug = fresh?.archetypeSlug ?? record.archetypeSlug;
-    if (!archetypeSlug) {
-      // Rien à quoi rattacher les annonces : la page restera sur le repli.
-    } else {
-      const brand = String((record.facts.brand as { value?: unknown } | undefined)?.value ?? "");
-      const model = String((record.facts.model as { value?: unknown } | undefined)?.value ?? "");
-
-      after(async () => {
-        try {
-          // Le kit production peut avoir échoué pendant la livraison : on le
-          // rejoue avant tout, c'est ce qui manque au commerçant.
-          const repair = await repairCreativeKit(providers, analysis.id);
-          if (!repair.repaired && repair.reason && repair.reason !== "Kit déjà présent.") {
-            console.warn("[variante] kit production non réparé :", repair.reason);
-          }
-
-          const escalation = await findProductAds(
-            {
-              productRef: record.productId,
-              archetypeSlug,
-              country: analysis.country,
-              brand,
-              model,
-              category: "produit",
-            },
-            providers.productPipeline?.metaAds,
-            { analysisId: analysis.id },
-          );
-
-          await db
-            .update(analyses)
-            .set({ marketScope: escalation.scope, marketNote: escalation.message, updatedAt: new Date() })
-            .where(eq(analyses.id, analysis.id));
-
-          // Les annonces trouvées montrent-elles vraiment CE produit ?
-          if (escalation.ads > 0 && env.GEMINI_API_KEY && record.gallery[0]?.url) {
-            const verified = await verifyProductAds({
-              productRef: record.productId,
-              productImageUrl: record.gallery[0].url,
-              apiKey: env.GEMINI_API_KEY,
-            });
-            if (verified.checked > 0) {
-              await db
-                .update(analyses)
-                .set({
-                  marketNote: `${escalation.message} ${verified.confirmed}/${verified.checked} visuels confirment le produit.`,
-                  updatedAt: new Date(),
-                })
-                .where(eq(analyses.id, analysis.id));
-            }
-          }
-
-          /**
-           * Kit « Convaincre » complet : concurrents, désirs, objections.
-           * Les concurrents se calculent ; le reste exige un modèle, avec
-           * obligation de citer une annonce réelle.
-           */
-          if (escalation.ads > 0) {
-            const rows = await db
-              .select({
-                advertiserId: adObservations.advertiserId,
-                advertiserName: adObservations.advertiserName,
-                hook: adObservations.hook,
-                startDate: adObservations.startDate,
-                url: adObservations.url,
-                isActive: adObservations.isActive,
-              })
-              .from(adObservations)
-              .where(eq(adObservations.productRef, record.productId))
-              .limit(100);
-
-            const { enrichment } = await enrichMarket({
-              writer: providers.writer,
-              ads: rows.map((row) => ({ ...row, hook: row.hook ?? "" })),
-              product: {
-                title: record.title,
-                category: "produit",
-                country: analysis.country,
-              },
-            });
-
-            if (enrichment) {
-              await db
-                .update(analyses)
-                .set({
-                  marketEnrichment: enrichment as unknown as Record<string, unknown>,
-                  updatedAt: new Date(),
-                })
-                .where(eq(analyses.id, analysis.id));
-            }
-          }
-        } catch (error) {
-          console.warn("[variante] recherche produit échouée", error);
-        }
-      });
-    }
-
     return NextResponse.json(outcome.payload);
   } catch (error) {
     await releaseAnalysis({

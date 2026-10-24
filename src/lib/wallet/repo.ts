@@ -166,11 +166,13 @@ export async function reserveForAnalysis(input: {
   userId: string;
   analysisId: string;
   amountXof?: number;
+  /** 1 = dossier produit, 2 = étude de marché. */
+  step?: number;
 }): Promise<{ balance: number; debited: boolean }> {
   const amount = input.amountXof ?? env.CREDIT_XOF;
   const { balance, posted } = await postEntries(
     input.userId,
-    reservationEntries(input.analysisId, amount),
+    reservationEntries(input.analysisId, amount, input.step ?? 1),
   );
   return { balance, debited: posted.length > 0 };
 }
@@ -181,10 +183,11 @@ export async function settleAnalysis(input: {
   analysisId: string;
   reservedXof: number;
   actualXof: number;
+  step?: number;
 }): Promise<{ balance: number }> {
   const { balance } = await postEntries(
     input.userId,
-    settleEntries(input.analysisId, input.reservedXof, input.actualXof),
+    settleEntries(input.analysisId, input.reservedXof, input.actualXof, input.step ?? 1),
   );
   return { balance };
 }
@@ -194,10 +197,11 @@ export async function releaseAnalysis(input: {
   userId: string;
   analysisId: string;
   reservedXof: number;
+  step?: number;
 }): Promise<{ balance: number }> {
   const { balance } = await postEntries(
     input.userId,
-    releaseEntries(input.analysisId, input.reservedXof),
+    releaseEntries(input.analysisId, input.reservedXof, input.step ?? 1),
   );
   return { balance };
 }

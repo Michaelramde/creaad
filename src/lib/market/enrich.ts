@@ -51,14 +51,33 @@ Tu travailles UNIQUEMENT à partir des annonces fournies. Tu n'inventes rien :
 chaque désir et chaque objection doit citer les URLs des annonces qui le prouvent.
 Tu réponds en français, uniquement en JSON.`;
 
+export interface ReviewSample {
+  rating: number;
+  text: string;
+  country?: string;
+  date?: string;
+}
+
 function buildPrompt(input: {
   ads: readonly { hook: string; url: string; advertiserName: string | null }[];
+  reviews: readonly ReviewSample[];
+  reviewSourceUrl?: string;
   product: { title: string; category: string; country: string };
 }): string {
   const lines = input.ads
-    .slice(0, 30)
-    .map((ad, index) => `[${index + 1}] ${ad.url}\n    « ${ad.hook.replace(/\s+/g, " ").slice(0, 220)} »`)
+    .slice(0, 20)
+    .map((ad, index) => `[${index + 1}] ${ad.url}\n    « ${ad.hook.replace(/\s+/g, " ").slice(0, 200)} »`)
     .join("\n");
+
+  const reviews = input.reviews
+    .slice(0, 15)
+    .map(
+      (review, index) =>
+        `[A${index + 1}] ${review.rating}/5 · ${review.country ?? "?"} · ${review.date ?? "?"}\n    « ${review.text.replace(/\s+/g, " ").slice(0, 220)} »`,
+    )
+    .join("\n");
+
+  const reviewUrl = input.reviewSourceUrl ?? "";
 
   return `${SYSTEM}
 
@@ -66,22 +85,26 @@ PRODUIT : ${input.product.title}
 CATÉGORIE : ${input.product.category}
 PAYS : ${input.product.country}
 
-ANNONCES RÉELLEMENT DIFFUSÉES (URL + texte de l'annonce) :
-${lines}
+ANNONCES DES CONCURRENTS :
+${lines || "(aucune)"}
+
+AVIS D'ACHETEURS RÉELS DE CE PRODUIT (note, pays, date, texte) :
+${reviews || "(aucun)"}
 
 PRODUIS :
 - "desires" : 3 à 5 désirs d'acheteurs, du plus superficiel (1) au plus profond (5).
-  Chaque désir cite au moins une URL de la liste dans "evidence".
-- "objections" : 2 à 4 freins à l'achat, chacun avec un "counterAngle" concret.
-  Chaque objection cite au moins une URL dans "evidence".
-- "personas" : 1 à 3 profils d'acheteurs. Chaque persona a 1 à 2 "verbatims"
-  reprenant MOT POUR MOT un extrait d'une annonce, avec sa "sourceUrl".
+  Appuie-toi sur les avis les mieux notés ET sur les annonces.
+  "evidence" cite les URLs d'annonces (https://…) ou l'URL du produit ${reviewUrl}.
+- "objections" : 2 à 4 freins à l'achat avec un "counterAngle" concret.
+  Appuie-toi en priorité sur les avis mal notés (≤ 3 étoiles) : ce sont de vraies plaintes.
+  "evidence" cite les URLs d'annonces ou ${reviewUrl}.
+- "personas" : 1 à 3 profils. Chaque "verbatim" reprend MOT POUR MOT un extrait
+  d'avis ou d'annonce, avec sa "sourceUrl".
 - "riskFlags" : promesses qui peuvent faire refuser une publicité Meta
-  (santé, éclaircissement de peau, garantie absolue). "type" vaut
-  "meta_policy" | "legal" | "category", "severity" vaut "info" | "warning" | "blocking".
+  (santé, éclaircissement de peau, garantie absolue).
 
-RÈGLE ABSOLUE : toute URL citée doit exister dans la liste ci-dessus, à l'identique.
-Une affirmation sans preuve sera rejetée.
+RÈGLE ABSOLUE : toute URL citée doit être soit une URL d'annonce ci-dessus,
+soit ${reviewUrl}. Une affirmation sans preuve sera rejetée.
 
 FORMAT :
 {"desires":[{"level":3,"statement":"…","evidence":["https://…"]}],
@@ -151,26 +174,32 @@ export function sanitizeEnrichment(raw: RawEnrichment, allowed: ReadonlySet<stri
 export async function enrichMarket(input: {
   writer: CreativeWriter | undefined;
   ads: readonly (AdForCompetitors & { hook: string })[];
+  /** Avis d'acheteurs réels : la source des objections. */
+  reviews?: readonly ReviewSample[];
+  /** URL de la fiche produit, seule preuve citable pour un avis. */
+  reviewSourceUrl?: string;
   product: { title: string; category: string; country: string };
 }): Promise<{ enrichment: MarketEnrichment | null; warnings: string[] }> {
   const competitors = buildCompetitors(input.ads);
   const warnings: string[] = [];
+  const reviews = input.reviews ?? [];
 
-  if (!input.writer) {
-    return { enrichment: { competitors, desires: [], objections: [], personas: [], riskFlags: [] }, warnings };
-  }
+  const empty: MarketEnrichment = { competitors, desires: [], objections: [], personas: [], riskFlags: [] };
+
+  if (!input.writer) return { enrichment: empty, warnings };
 
   const withHook = input.ads.filter((ad) => ad.hook);
-  if (withHook.length === 0) {
-    return { enrichment: { competitors, desires: [], objections: [], personas: [], riskFlags: [] }, warnings };
-  }
+  if (withHook.length === 0 && reviews.length === 0) return { enrichment: empty, warnings };
 
   const allowed = new Set(input.ads.map((ad) => ad.url));
+  if (input.reviewSourceUrl) allowed.add(input.reviewSourceUrl);
 
   try {
     const raw = await input.writer.write(
       buildPrompt({
         ads: withHook.map((ad) => ({ hook: ad.hook, url: ad.url, advertiserName: ad.advertiserName })),
+        reviews,
+        ...(input.reviewSourceUrl ? { reviewSourceUrl: input.reviewSourceUrl } : {}),
         product: input.product,
       }),
     );

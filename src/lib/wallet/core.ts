@@ -66,11 +66,17 @@ export function remainingAnalyses(balance: number, creditXof: number): number {
    de seconde écriture. C'est la seule protection, GeniusPay n'exposant
    pas de clé d'idempotence côté API.                                        */
 
+/**
+ * Suffixe d'étape. L'étape 1 garde les clés historiques — les écritures déjà
+ * en base restent valides — et l'étape 2 reçoit son propre espace de noms.
+ */
+const stepSuffix = (step: number) => (step <= 1 ? "" : `:etape${step}`);
+
 export const idem = {
   recharge: (providerTxnId: string) => `recharge:${providerTxnId}`,
-  reservation: (analysisId: string) => `reservation:${analysisId}`,
-  liberation: (analysisId: string) => `liberation:${analysisId}`,
-  reglement: (analysisId: string) => `reglement:${analysisId}`,
+  reservation: (analysisId: string, step = 1) => `reservation:${analysisId}${stepSuffix(step)}`,
+  liberation: (analysisId: string, step = 1) => `liberation:${analysisId}${stepSuffix(step)}`,
+  reglement: (analysisId: string, step = 1) => `reglement:${analysisId}${stepSuffix(step)}`,
   remboursement: (topupId: string) => `remboursement:${topupId}`,
 } as const;
 
@@ -92,14 +98,14 @@ export function creditEntry(input: {
   };
 }
 
-/** Réservation au lancement de l'analyse (débit). */
-export function reservationEntries(analysisId: string, amountXof: number): EntryDraft[] {
+/** Réservation au lancement d'une étape (débit). */
+export function reservationEntries(analysisId: string, amountXof: number, step = 1): EntryDraft[] {
   // La réservation est toujours un débit, quel que soit le signe reçu.
   return [
     {
       type: "reservation",
       amountXof: -Math.abs(amountXof),
-      idempotencyKey: idem.reservation(analysisId),
+      idempotencyKey: idem.reservation(analysisId, step),
       analysisId,
     },
   ];
@@ -110,32 +116,37 @@ export function reservationEntries(analysisId: string, amountXof: number): Entry
  * puis on débite le coût réel. L'effet net vaut `reserved - actual`.
  * Deux écritures plutôt qu'une : l'audit reste lisible.
  */
-export function settleEntries(analysisId: string, reserved: number, actual: number): EntryDraft[] {
+export function settleEntries(
+  analysisId: string,
+  reserved: number,
+  actual: number,
+  step = 1,
+): EntryDraft[] {
   const reserve = Math.abs(reserved);
   const real = Math.abs(actual);
   return [
     {
       type: "liberation",
       amountXof: reserve,
-      idempotencyKey: `${idem.liberation(analysisId)}:settle`,
+      idempotencyKey: `${idem.liberation(analysisId, step)}:settle`,
       analysisId,
     },
     {
       type: "reglement",
       amountXof: -real,
-      idempotencyKey: idem.reglement(analysisId),
+      idempotencyKey: idem.reglement(analysisId, step),
       analysisId,
     },
   ];
 }
 
-/** Échec : restitution intégrale, le commerçant n'a rien payé. */
-export function releaseEntries(analysisId: string, reserved: number): EntryDraft[] {
+/** Échec : restitution intégrale, le commerçant n'a rien payé pour cette étape. */
+export function releaseEntries(analysisId: string, reserved: number, step = 1): EntryDraft[] {
   return [
     {
       type: "liberation",
       amountXof: Math.abs(reserved),
-      idempotencyKey: idem.liberation(analysisId),
+      idempotencyKey: idem.liberation(analysisId, step),
       analysisId,
     },
   ];

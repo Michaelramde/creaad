@@ -20,6 +20,11 @@ export interface PersistContext {
   userId: string;
   country: string;
   creditXof: number;
+  /**
+   * `produit` = étape 1 : on ne livre que la planche et le dossier produit.
+   * `complet` = parcours en une seule étape (ancien comportement).
+   */
+  phase?: "produit" | "complet";
   result: RunAnalysisResult;
 }
 
@@ -155,7 +160,73 @@ export async function persistAnalysisOutcome(ctx: PersistContext): Promise<Persi
     }
   }
 
-  /* ── 4. Marché : mis en cache, et offert même si la planche est refusée ── */
+  /* ── 4. Étape 1 : le dossier produit s'arrête ici ─────────────────────── */
+  if (ctx.phase === "produit") {
+    await settleAnalysis({
+      userId,
+      analysisId,
+      reservedXof: creditXof,
+      actualXof: creditXof,
+      step: 1,
+    });
+
+    await db
+      .update(analyses)
+      .set({
+        status: result.blocked ? "planche_prete" : "produit_pret",
+        settledXof: result.blocked ? 0 : creditXof,
+        failureCode: result.blocked ? (plan?.plan.fidelity.gate ?? "PLAN_REFUSED") : null,
+        matchScore: result.product ? 95 : result.identify.match.score,
+        matchCoverage: result.identify.match.coverage.toFixed(2),
+        matchResult: {
+          ...(result.identify.match as unknown as Record<string, unknown>),
+          ...(result.product
+            ? {
+                product: {
+                  productId: result.product.record.productId,
+                  title: result.product.record.title,
+                  url: result.product.record.url,
+                  image: result.product.record.gallery[0]?.url ?? null,
+                  price: result.product.record.price ?? null,
+                  currency: result.product.record.currency ?? null,
+                },
+              }
+            : {}),
+        },
+        archetypeSlug: result.identify.archetype.slug,
+        ...(result.product ? { productRef: result.product.record.productId } : {}),
+        pendingVariants: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(analyses.id, analysisId));
+
+    // Planche refusée : on restitue, l'étape n'a pas été livrée.
+    if (result.blocked) await releaseAnalysis({ userId, analysisId, reservedXof: creditXof, step: 1 });
+
+    return {
+      status: result.blocked ? "planche_prete" : "produit_pret",
+      charged: !result.blocked,
+      payload: {
+        analysisId,
+        status: result.blocked ? "planche_prete" : "produit_pret",
+        step: 1,
+        archetype: result.identify.archetype,
+        product: result.product
+          ? {
+              productId: result.product.record.productId,
+              title: result.product.record.title,
+              url: result.product.record.url,
+            }
+          : null,
+        facts: result.product?.facts ?? {},
+        plan: summarizePlan(plan),
+        warnings: result.warnings,
+        charged: !result.blocked,
+      },
+    };
+  }
+
+  /* ── 5. Marché : mis en cache, et offert même si la planche est refusée ── */
   let marketSummary: unknown = null;
 
   if (result.market) {

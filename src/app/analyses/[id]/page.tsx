@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { ConfirmArticle } from "@/components/confirm-article";
 import { CopyButton } from "@/components/copy-button";
+import { MarketStepButton } from "@/components/market-step-button";
 import { SafeImage } from "@/components/safe-image";
 import { VariantPicker } from "@/components/variant-picker";
 import { Badge, Card, Kicker, type Tone } from "@/components/ui";
@@ -32,6 +33,7 @@ interface StoredEnrichment {
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
+  produit_pret: { label: "Produit prêt", tone: "ok" },
   variante_a_choisir: { label: "Coloris à choisir", tone: "info" },
   bloquee_article: { label: "Produit non identifié", tone: "warn" },
   planche_prete: { label: "Planche incomplète", tone: "warn" },
@@ -387,6 +389,15 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             ))}
           </div>
         </section>
+      )}
+
+      {/* Étape 1 terminée : le dossier produit se suffit, l'étude de marché
+          est une seconde demande explicitement facturée. */}
+      {row.status === "produit_pret" && (
+        <MarketStepButton
+          analysisId={row.id}
+          creditXof={Number(process.env.NEXT_PUBLIC_CREDIT_XOF ?? 1000)}
+        />
       )}
 
       {/*
