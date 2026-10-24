@@ -12,6 +12,7 @@ import {
 } from "./defaults.ts";
 import { GeminiAttributeProvider, GeminiOcrProvider } from "./gemini.ts";
 import { GeminiSlotClassifier, GeminiVisualComparator } from "./gemini-vision.ts";
+import { GeminiEmbeddingProvider } from "./gemini-embedding.ts";
 import { GeminiCreativeWriter } from "./gemini-writer.ts";
 import { VisualIndexSource } from "./visual-index.ts";
 import { MistralOcrProvider } from "./mistral-ocr.ts";
@@ -69,7 +70,9 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
   return {
     ocr,
     attributes,
-    embeddings: overrides.embeddings ?? new NoopEmbeddingProvider(),
+    embeddings:
+      overrides.embeddings ??
+      (env.GEMINI_API_KEY ? new GeminiEmbeddingProvider(env.GEMINI_API_KEY) : new NoopEmbeddingProvider()),
     sources: overrides.sources ?? defaultSources,
     ...(env.GEMINI_API_KEY
       ? {
