@@ -10,7 +10,7 @@ const pool = new Pool({ connectionString: dbUrl, max: 1 });
 /* On prend l'analyse bloquée et on la vieillit de 40 minutes. */
 const { rows } = await pool.query(
   `SELECT id, user_id, reserved_xof FROM analyses
-   WHERE status IN ('ocr','appariement') AND reserved_xof > 0
+   WHERE status IN ('ocr','appariement','variante_a_choisir') AND reserved_xof > 0
    ORDER BY created_at DESC LIMIT 1`,
 );
 
