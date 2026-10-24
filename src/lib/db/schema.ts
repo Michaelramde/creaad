@@ -220,6 +220,7 @@ export const analyses = pgTable(
         | "ocr"
         | "appariement"
         | "bloquee_article"
+        | "variante_a_choisir"
         | "moisson"
         | "planche_prete"
         | "en_attente_validation"
@@ -241,6 +242,10 @@ export const analyses = pgTable(
     matchCoverage: numeric("match_coverage", { precision: 3, scale: 2 }),
     matchResult: jsonb("match_result"),
     archetypeSlug: text("archetype_slug"),
+    /** Produit fournisseur identifié, pour ne pas le recalculer à la reprise. */
+    productRef: text("product_ref"),
+    /** Axes de variantes proposés quand l'analyse attend un choix. */
+    pendingVariants: jsonb("pending_variants").$type<VariantAxis[]>(),
     manualConfirmedAt: timestamp("manual_confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -251,7 +256,7 @@ export const analyses = pgTable(
     check(
       "ck_analysis_states",
       sql`${t.status} IN ('creee','reservee','capture','ocr','appariement','bloquee_article',
-        'moisson','planche_prete','en_attente_validation','recherche_marche',
+        'variante_a_choisir','moisson','planche_prete','en_attente_validation','recherche_marche',
         'marche_pret','production','livree','echouee')`,
     ),
   ],
@@ -298,6 +303,8 @@ export const planImages = pgTable(
     height: integer("height"),
     phash: text("phash"),
     isDistinctSource: boolean("is_distinct_source").notNull().default(true),
+    /** Vrai si cette image porte le coloris choisi par le commerçant. */
+    isVariantReference: boolean("is_variant_reference").notNull().default(false),
     hasWatermark: boolean("has_watermark").notNull().default(false),
     sourceUrl: text("source_url"),
   },

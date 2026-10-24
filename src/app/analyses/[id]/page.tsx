@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { ConfirmArticle } from "@/components/confirm-article";
 import { CopyButton } from "@/components/copy-button";
 import { SafeImage } from "@/components/safe-image";
+import { VariantPicker } from "@/components/variant-picker";
 import { Badge, Card, Kicker, type Tone } from "@/components/ui";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -14,6 +15,7 @@ import { ANGLE_LABELS, type AngleFamily } from "@/lib/market/types";
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
+  variante_a_choisir: { label: "Coloris à choisir", tone: "info" },
   bloquee_article: { label: "Produit non identifié", tone: "warn" },
   planche_prete: { label: "Planche incomplète", tone: "warn" },
   echouee: { label: "Échec", tone: "risk" },
@@ -48,6 +50,7 @@ interface StoredMatch {
   score?: number;
   accepted?: boolean;
   candidate?: { title?: string; url?: string; images?: { url: string }[] };
+  product?: { title?: string; url?: string; image?: string | null; productId?: string };
   components?: Record<string, { points: number; max: number; evidence: boolean; detail: string }>;
   gateReason?: string;
 }
@@ -135,8 +138,11 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  const identified = match?.accepted === true;
-  const candidateImage = match?.candidate?.images?.[0]?.url ?? null;
+  const pendingVariant = row.status === "variante_a_choisir";
+  const identified = match?.accepted === true || pendingVariant;
+  const candidateImage = match?.product?.image ?? match?.candidate?.images?.[0]?.url ?? null;
+  const candidateTitle = match?.product?.title ?? match?.candidate?.title ?? null;
+  const candidateUrl = match?.product?.url ?? match?.candidate?.url ?? null;
 
   // Le nom saisi par le commerçant d'abord : « Mode Sac » ne veut rien dire.
   const title =
@@ -174,16 +180,20 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <ScoreRing value={row.matchScore ?? 0} tone={identified ? "ok" : "warn"} />
         <div className="min-w-0">
           <p className="text-sm font-medium">
-            {identified ? "Produit retrouvé" : "Produit non retrouvé"}
+            {pendingVariant ? "Produit retrouvé" : identified ? "Produit retrouvé" : "Produit non retrouvé"}
           </p>
           <p className="mt-0.5 text-xs leading-relaxed text-stone-500">
-            {identified ? explainScore(match) : explainFailure(match)}
+            {pendingVariant
+              ? "Le produit a été identifié chez le fournisseur. Choisis le coloris que tu vends."
+              : identified
+                ? explainScore(match)
+                : explainFailure(match)}
           </p>
         </div>
       </div>
 
       {/* Le produit réellement comparé */}
-      {match?.candidate?.title && (
+      {candidateTitle && (
         <Card className="mt-3 flex gap-3">
           {candidateImage && (
             <SafeImage
@@ -196,11 +206,11 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
               {identified ? "Produit de référence" : "Le plus proche trouvé"}
             </p>
             <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-stone-700">
-              {match.candidate.title}
+              {candidateTitle}
             </p>
-            {match.candidate.url && (
+            {candidateUrl && (
               <a
-                href={match.candidate.url}
+                href={candidateUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-1 inline-block text-[11px] text-stone-500 underline"
@@ -210,6 +220,15 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             )}
           </div>
         </Card>
+      )}
+
+      {/* Coloris à choisir */}
+      {pendingVariant && row.pendingVariants && row.pendingVariants.length > 0 && (
+        <VariantPicker
+          analysisId={row.id}
+          axes={row.pendingVariants}
+          creditXof={row.reservedXof ?? 0}
+        />
       )}
 
       {/* 1 · Montrer */}

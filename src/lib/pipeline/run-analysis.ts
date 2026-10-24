@@ -6,6 +6,8 @@
  * minimaliste n'a pas besoin d'un orchestrateur distribué.
  */
 import { buildCreativeStep, type CreativeStepResult } from "./creative.ts";
+import { identifyProduct, type ProductIdentification } from "./identify-product.ts";
+import { imagesForSelection } from "../products/images.ts";
 import { buildMatrixFor } from "../market/store.ts";
 import { buildPortfolio, type Portfolio } from "../market/portfolio.ts";
 import type { SaturationMatrix } from "../market/types.ts";
@@ -25,16 +27,24 @@ export interface RunAnalysisInput {
   photos: UserPhoto[];
   variantLabel?: string;
   userText?: string;
+  /** Photo publique, pour la recherche inversée par Apify. */
+  publicImageUrl?: string;
+  /** Coloris retenu — présent uniquement à la reprise. */
+  variantSelection?: Record<string, string>;
+  analysisId?: string;
 }
 
 export interface RunAnalysisResult {
   identify: IdentifyOutput;
+  product?: ProductIdentification;
   plan?: PlanStepResult;
   market?: { matrix: SaturationMatrix; portfolio: Portfolio };
   creative?: CreativeStepResult;
   warnings: string[];
-  /** Vrai si l'analyse s'arrête avant de produire des kits. */
+  /** Faux si l'analyse attend un choix de coloris ou s'arrête sur un refus. */
   blocked: boolean;
+  /** Renseigné quand le commerçant doit choisir sa variante avant de continuer. */
+  pendingVariant?: ProductIdentification;
 }
 
 export async function runAnalysis(
@@ -54,19 +64,60 @@ export async function runAnalysis(
   });
   warnings.push(...identify.warnings);
 
-  if (identify.blocked) {
+  /* ── produit exact : la voie payante, quand elle est disponible ──────── */
+  let product: ProductIdentification | undefined;
+  if (providers.productPipeline && input.publicImageUrl) {
+    try {
+      const found = await identifyProduct(providers.productPipeline, {
+        imageUrl: input.publicImageUrl,
+        ...(input.analysisId ? { analysisId: input.analysisId } : {}),
+      });
+      if (found) {
+        product = found;
+        warnings.push(...found.warnings);
+
+        // Le coloris est nécessaire pour savoir quoi montrer : on s'arrête ici.
+        if (found.needsVariantChoice && !input.variantSelection) {
+          return { identify, product: found, warnings, blocked: false, pendingVariant: found };
+        }
+      }
+    } catch (error) {
+      warnings.push("Identification produit indisponible — repli sur l'archétype.");
+      console.warn("[run-analysis] produit non identifié", error);
+    }
+  }
+
+  if (identify.blocked && !product) {
     return { identify, warnings, blocked: true };
   }
 
   // Catégorie réellement reconnue (texte + image) : elle pilote les vues
   // requises et le ton des créas, pas le choix fait à la main.
-  const category = identify.archetype.category;
+  const category = product?.record.facts.brand
+    ? identify.archetype.category
+    : identify.archetype.category;
+
+  /**
+   * Photos de la planche : celles du produit et de la variante choisie.
+   *
+   * On ne mélange pas les photos du commerçant avec la galerie : s'il a choisi
+   * « marron » et photographié « noir », les deux ne peuvent pas coexister dans
+   * une planche censée montrer un seul article.
+   */
+  const selectionImages = product
+    ? imagesForSelection(product.record, input.variantSelection)
+    : null;
+
+  const planPhotos =
+    selectionImages && selectionImages.images.length > 0
+      ? selectionImages.images.map((image) => ({ url: image.url, width: image.width, height: image.height }))
+      : input.photos;
 
   /* ── planche ─────────────────────────────────────────────────────────── */
   const plan = await buildPlanStep(providers, {
     category,
     regime,
-    photos: input.photos,
+    photos: planPhotos,
     labelOcrConfidence: identify.ocrConfidence,
     listingImages: identify.match.candidate?.images.map((i) => i.url) ?? [],
   });

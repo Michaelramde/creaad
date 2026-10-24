@@ -4,21 +4,18 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { putMarketKit } from "@/lib/cache/store";
 import { db } from "@/lib/db";
-import { analyses, creativeKits, planImages, plans, products } from "@/lib/db/schema";
-import { env } from "@/lib/env";
-import { ensureArchetype } from "@/lib/market/store";
-import { createProviders } from "@/lib/providers";
+import { analyses, products } from "@/lib/db/schema";
+import { persistAnalysisOutcome } from "@/lib/pipeline/persist";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
-import { getWalletSummary, releaseAnalysis, reserveForAnalysis, settleAnalysis } from "@/lib/wallet/repo";
+import { createProviders } from "@/lib/providers";
+import { getWalletSummary, releaseAnalysis, reserveForAnalysis } from "@/lib/wallet/repo";
 
-/** Accepte une URL distante (R2, CDN) ou une image inline (démonstration). */
+/** Accepte une URL distante (R2, CDN) ou une image inline. */
 const imageUrl = z.union([z.url(), z.string().startsWith("data:image/").max(4_000_000)]);
 
 const bodySchema = z.object({
-  // Catégorie et mode ne sont plus demandés : le moteur les déduit des photos
-  // et du nom saisi. Ils restent acceptés pour les appels programmatiques.
+  // Catégorie et mode ne sont plus demandés : le moteur les déduit.
   category: z.enum(["beaute", "cheveux", "mode", "gadgets"]).optional(),
   regime: z.enum(["detenu", "non_detenu"]).optional(),
   country: z.string().length(2).default("CI"),
@@ -36,10 +33,12 @@ const bodySchema = z.object({
   userText: z.string().max(500).optional(),
 });
 
-/**
- * Crée une analyse et exécute le pipeline complet : identification,
- * planche, marché. Le crédit n'est débité qu'à la livraison.
- */
+/** URL publique d'une photo, pour que la recherche inversée puisse la lire. */
+function publicPhotoUrl(request: Request, analysisId: string): string {
+  const origin = new URL(request.url).origin;
+  return `${origin}/api/photos/${analysisId}/0`;
+}
+
 export async function POST(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
@@ -67,8 +66,6 @@ export async function POST(req: Request) {
     .insert(products)
     .values({
       userId: session.user.id,
-      // Valeurs provisoires : la catégorie réelle est déduite pendant
-      // l'identification et enregistrée sur l'analyse (archetypeSlug).
       category: input.category ?? "beaute",
       regime: input.regime ?? "non_detenu",
       name: input.userText ?? null,
@@ -105,219 +102,19 @@ export async function POST(req: Request) {
       photos: input.images,
       variantLabel: input.variantLabel,
       userText: input.userText,
+      publicImageUrl: publicPhotoUrl(req, analysis.id),
+      analysisId: analysis.id,
     });
 
-    /* ── identification bloquée : aucun débit ──────────────────────────── */
-    if (!result.identify.match.accepted) {
-      await releaseAnalysis({
-        userId: session.user.id,
-        analysisId: analysis.id,
-        reservedXof: wallet.creditXof,
-      });
-      await db
-        .update(analyses)
-        .set({
-          status: "bloquee_article",
-          failureCode: result.identify.match.gateReason,
-          matchScore: result.identify.match.score,
-          matchCoverage: result.identify.match.coverage.toFixed(2),
-          matchResult: result.identify.match as unknown as Record<string, unknown>,
-          archetypeSlug: result.identify.archetype.slug,
-          updatedAt: new Date(),
-        })
-        .where(eq(analyses.id, analysis.id));
-
-      return NextResponse.json({
-        analysisId: analysis.id,
-        status: "bloquee_article",
-        archetype: result.identify.archetype,
-        match: summarizeMatch(result.identify.match),
-        candidatesFound: result.identify.candidatesFound,
-        warnings: result.warnings,
-        charged: false,
-      });
-    }
-
-    /* ── planche ───────────────────────────────────────────────────────── */
-    const plan = result.plan;
-    let planId: string | undefined;
-
-    if (plan) {
-      const [row] = await db
-        .insert(plans)
-        .values({
-          analysisId: analysis.id,
-          fidelityScore: plan.plan.fidelity.score,
-          breakdown: plan.plan.fidelity.breakdown,
-          gatePassed: plan.plan.fidelity.gatePassed,
-          gateReason: plan.plan.fidelity.gate,
-          qualityNote: plan.plan.fidelity.qualityNote ?? null,
-        })
-        .returning({ id: plans.id });
-      planId = row?.id;
-
-      if (planId && plan.plan.assignments.length > 0) {
-        await db.insert(planImages).values(
-          plan.plan.assignments.map((assignment) => ({
-            planId: planId as string,
-            slot: assignment.slot.id,
-            url: assignment.image.url,
-            provenance: "utilisateur" as const,
-            width: assignment.image.width ?? null,
-            height: assignment.image.height ?? null,
-            isDistinctSource: true,
-          })),
-        );
-      }
-    }
-
-    /* ── planche refusée : rien n'est débité, mais les angles sont offerts ── */
-    if (result.blocked) {
-      let preview: unknown = null;
-
-      if (result.market?.matrix.publishable) {
-        const { matrix, portfolio } = result.market;
-        const archetypeId = await ensureArchetype({
-          slug: result.identify.archetype.slug,
-          label: result.identify.archetype.label,
-          category: result.identify.archetype.category,
-        });
-        await putMarketKit({
-          archetypeId,
-          country: input.country,
-          content: { portfolio, dataQuality: matrix.dataQuality },
-          adsFound: matrix.dataQuality.adsFound,
-          confidence: matrix.dataQuality.confidence,
-        });
-
-        preview = {
-          publishable: true,
-          adsFound: matrix.dataQuality.adsFound,
-          confidence: matrix.dataQuality.confidence,
-          angles: portfolio.entries.slice(0, 6).map((e) => ({
-            family: e.family,
-            action: e.action,
-            advertisers: e.figures.advertisers,
-            medianDays: Math.round(e.figures.medianDaysRunning),
-            rationale: e.rationale,
-          })),
-        };
-      }
-
-      await releaseAnalysis({
-        userId: session.user.id,
-        analysisId: analysis.id,
-        reservedXof: wallet.creditXof,
-      });
-      await db
-        .update(analyses)
-        .set({
-          status: "planche_prete",
-          failureCode: plan?.plan.fidelity.gate ?? "PLAN_REFUSED",
-          matchScore: result.identify.match.score,
-          matchCoverage: result.identify.match.coverage.toFixed(2),
-          matchResult: result.identify.match as unknown as Record<string, unknown>,
-          archetypeSlug: result.identify.archetype.slug,
-          updatedAt: new Date(),
-        })
-        .where(eq(analyses.id, analysis.id));
-
-      return NextResponse.json({
-        analysisId: analysis.id,
-        status: "planche_prete",
-        archetype: result.identify.archetype,
-        match: summarizeMatch(result.identify.match),
-        plan: summarizePlan(plan),
-        market: preview,
-        warnings: result.warnings,
-        charged: false,
-      });
-    }
-
-    /* ── marché : on met en cache et on débite ─────────────────────────── */
-    let marketSummary: unknown = null;
-    if (result.market) {
-      const { matrix, portfolio } = result.market;
-      marketSummary = {
-        publishable: matrix.publishable,
-        adsFound: matrix.dataQuality.adsFound,
-        advertisers: matrix.dataQuality.distinctAdvertisers,
-        confidence: matrix.dataQuality.confidence,
-        angles: portfolio.entries.slice(0, 6).map((e) => ({
-          family: e.family,
-          action: e.action,
-          advertisers: e.figures.advertisers,
-          medianDays: Math.round(e.figures.medianDaysRunning),
-          rationale: e.rationale,
-        })),
-        gaps: matrix.dataQuality.gaps,
-      };
-
-      if (matrix.publishable) {
-        const archetypeId = await ensureArchetype({
-          slug: result.identify.archetype.slug,
-          label: result.identify.archetype.label,
-          category: result.identify.archetype.category,
-        });
-        await putMarketKit({
-          archetypeId,
-          country: input.country,
-          content: { portfolio, dataQuality: matrix.dataQuality },
-          adsFound: matrix.dataQuality.adsFound,
-          confidence: matrix.dataQuality.confidence,
-        });
-      }
-    }
-
-    /* ── production : on enregistre le kit créatif s'il a été rédigé ────── */
-    let creativeSummary: unknown = null;
-    if (result.creative?.kit) {
-      await db
-        .insert(creativeKits)
-        .values({ analysisId: analysis.id, content: result.creative.kit as unknown as object })
-        .onConflictDoNothing();
-
-      creativeSummary = {
-        bigIdea: result.creative.kit.bigIdea,
-        angles: result.creative.kit.angles.length,
-        hooks: result.creative.kit.hooks.length,
-        scripts: result.creative.kit.scripts.length,
-        prompts: result.creative.kit.imagePrompts.length,
-      };
-    }
-
-    await settleAnalysis({
+    const outcome = await persistAnalysisOutcome({
+      analysisId: analysis.id,
       userId: session.user.id,
-      analysisId: analysis.id,
-      reservedXof: wallet.creditXof,
-      actualXof: wallet.creditXof,
+      country: input.country,
+      creditXof: wallet.creditXof,
+      result,
     });
 
-    await db
-      .update(analyses)
-      .set({
-        status: "livree",
-        settledXof: wallet.creditXof,
-        matchScore: result.identify.match.score,
-        matchCoverage: result.identify.match.coverage.toFixed(2),
-        matchResult: result.identify.match as unknown as Record<string, unknown>,
-        archetypeSlug: result.identify.archetype.slug,
-        updatedAt: new Date(),
-      })
-      .where(eq(analyses.id, analysis.id));
-
-    return NextResponse.json({
-      analysisId: analysis.id,
-      status: "livree",
-      archetype: result.identify.archetype,
-      match: summarizeMatch(result.identify.match),
-      plan: summarizePlan(plan),
-      planId,
-      market: marketSummary,
-      creative: creativeSummary,
-      warnings: result.warnings,
-      charged: true,
-    });
+    return NextResponse.json(outcome.payload);
   } catch (error) {
     await releaseAnalysis({
       userId: session.user.id,
@@ -331,7 +128,6 @@ export async function POST(req: Request) {
 
     console.error("[analyses] pipeline échoué", error);
 
-    // Une panne de fournisseur ne doit pas ressembler à un mauvais produit.
     const saturated = /429|503|quota|high demand|timeout/i.test(String(error));
     return NextResponse.json(
       {
@@ -343,40 +139,4 @@ export async function POST(req: Request) {
       { status: 503 },
     );
   }
-}
-
-function summarizeMatch(match: {
-  score: number;
-  coverage: number;
-  accepted: boolean;
-  gateReason: string;
-  candidate?: { title: string; url: string };
-  components: Record<string, { points: number; max: number; evidence: boolean; detail: string }>;
-}) {
-  return {
-    score: match.score,
-    coverage: match.coverage,
-    accepted: match.accepted,
-    gateReason: match.gateReason,
-    candidate: match.candidate
-      ? { title: match.candidate.title, url: match.candidate.url }
-      : null,
-    components: match.components,
-  };
-}
-
-function summarizePlan(plan?: { plan: { fidelity: { score: number; gatePassed: boolean; gate: string; missing: string[]; qualityNote?: string }; assignments: { slot: { id: string; label: string }; image: { url: string } }[] } }) {
-  if (!plan) return null;
-  return {
-    score: plan.plan.fidelity.score,
-    gatePassed: plan.plan.fidelity.gatePassed,
-    gate: plan.plan.fidelity.gate,
-    missing: plan.plan.fidelity.missing,
-    qualityNote: plan.plan.fidelity.qualityNote ?? null,
-    slots: plan.plan.assignments.map((a) => ({
-      id: a.slot.id,
-      label: a.slot.label,
-      url: a.image.url,
-    })),
-  };
 }
