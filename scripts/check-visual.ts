@@ -36,7 +36,7 @@ for (const source of providers.sources) {
       const sim =
         userEmbedding && candidate.embedding ? cosine(userEmbedding, candidate.embedding) : null;
       console.log(
-        `   ${candidate.externalId} · vecteur=${candidate.embedding ? "oui" : "non"} · cos=${sim === null ? "—" : sim.toFixed(3)} · ${candidate.title.slice(0, 45)}`,
+        `   ${candidate.externalId} · vecteur=${candidate.embedding ? "oui" : "non"} · ${candidate.images.length} img · cos=${sim === null ? "—" : sim.toFixed(3)} · ${candidate.title.slice(0, 45)}`,
       );
     }
   } catch (error) {

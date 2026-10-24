@@ -57,6 +57,11 @@ interface SearchItem {
   productId?: string;
   title?: { displayTitle?: string };
   image?: { imgUrl?: string };
+  /**
+   * La page de recherche contient **six** visuels par produit, pas un.
+   * On n'extrayait que la vignette : la galerie était là, gratuitement.
+   */
+  images?: { imgUrl?: string }[];
   prices?: { salePrice?: { formattedPrice?: string } };
 }
 
@@ -127,12 +132,15 @@ export class AliExpressHttpSource implements SourceAdapter {
       const form = /flacon|bouteille|tube|pot|boite|coffret|pompe|spray/i.exec(normalize(title))?.[0];
       if (form) attributes.form = form;
 
-      const rawImage = item.image?.imgUrl;
-      const image = rawImage
-        ? rawImage.startsWith("//")
-          ? `https:${rawImage}`
-          : rawImage
-        : undefined;
+      const absolute = (raw?: string) =>
+        raw ? (raw.startsWith("//") ? `https:${raw}` : raw) : undefined;
+
+      const fromGallery = (item.images ?? [])
+        .map((entry) => absolute(entry.imgUrl))
+        .filter((url): url is string => typeof url === "string");
+
+      const main = absolute(item.image?.imgUrl);
+      const gallery = [...new Set([...(main ? [main] : []), ...fromGallery])];
 
       candidates.push({
         provider: this.name,
@@ -142,7 +150,7 @@ export class AliExpressHttpSource implements SourceAdapter {
         ...(item.prices?.salePrice?.formattedPrice
           ? { description: `Prix affiché : ${item.prices.salePrice.formattedPrice}` }
           : {}),
-        images: image ? [{ url: image }] : [],
+        images: gallery.map((url) => ({ url })),
         attributes,
         variant: {
           ...(variant.colorName ? { colorName: variant.colorName } : {}),
