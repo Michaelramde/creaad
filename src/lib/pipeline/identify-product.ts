@@ -110,7 +110,7 @@ export async function identifyProduct(
 
   const record = detail.record;
 
-  /* 3 — Corroboration fournisseurs : seulement si la fiche n'est pas en cache. */
+  /* 3 — Faits : spécifications, puis lecture des tableaux de mesures. */
   const fromSpecs = factsFromProduct({ title: record.title, specs: record.specs });
 
   /**
@@ -120,11 +120,22 @@ export async function identifyProduct(
    */
   const fromGallery = detail.cached ? {} : await readGalleryText(pipeline, record, warnings);
 
-  const sources: SourceFacts[] = [
-    { source: "aliexpress", facts: { ...fromSpecs, ...fromGallery } },
-  ];
+  const ownFacts: RawFacts = { ...fromSpecs, ...fromGallery };
+  const sources: SourceFacts[] = [{ source: "aliexpress", facts: ownFacts }];
 
-  if (!detail.cached) {
+  /**
+   * Fournisseurs Alibaba : **uniquement si une dimension manque encore**.
+   *
+   * Mesuré : cet appel coûte 0,101 $, soit 20 fois le prix annoncé, et plus
+   * que la fiche entière. On ne le déclenche donc que lorsqu'il apporte
+   * quelque chose — des dimensions absentes par ailleurs.
+   */
+  const missingDimensions =
+    ownFacts.volumeMl === undefined &&
+    ownFacts.weightG === undefined &&
+    ownFacts.lengthWidthHeightMm === undefined;
+
+  if (!detail.cached && missingDimensions) {
     try {
       const suppliers = await pipeline.suppliers.find(input.imageUrl, {
         ...(input.analysisId ? { analysisId: input.analysisId } : {}),
