@@ -76,10 +76,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   lines.push("", "## Photos", "", `Total : ${images.length} images`, "");
+  const labels: Record<string, string> = {
+    packshot: "produit seul",
+    scene: "en scène",
+    spec: "produit + mesures",
+    sans_produit: "sans produit",
+  };
+
   for (const [index, image] of images.entries()) {
-    lines.push(
-      `${String(index + 1).padStart(2, "0")}. images/${imageFileName(index, image, colourName(image.variantValueId))} — ${image.kind === "technique" ? "technique" : colourName(image.variantValueId)}`,
-    );
+    const nature = labels[image.kind ?? "sans_produit"] ?? "sans produit";
+    const colour = image.variantValueId ? colourName(image.variantValueId) : nature;
+    lines.push(`${String(index + 1).padStart(2, "0")}. images/${imageFileName(index, image, colour)} — ${nature}${image.variantValueId ? ` · ${colour}` : ""}`);
   }
 
   const entries: ZipEntry[] = [

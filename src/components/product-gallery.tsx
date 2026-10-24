@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from "react";
 
+import type { ImageKind } from "@/lib/products/types";
+
 export interface GalleryImage {
   url: string;
+  kind?: ImageKind;
   variantValueId?: string;
-  kind?: "produit" | "technique";
 }
 
 export interface GalleryColour {
@@ -16,16 +18,33 @@ export interface GalleryColour {
 
 const PREVIEW = 9;
 
+const NATURE: Record<ImageKind, { label: string; badge: string }> = {
+  packshot: { label: "Produit", badge: "bg-stone-900/85" },
+  scene: { label: "En scène", badge: "bg-sky-700/85" },
+  spec: { label: "Mesures", badge: "bg-violet-700/85" },
+  sans_produit: { label: "Sans produit", badge: "bg-stone-500/85" },
+};
+
+type Tab = "tout" | "packshot" | "scene" | "spec" | "autre";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "tout", label: "Tout" },
+  { id: "packshot", label: "Produit seul" },
+  { id: "scene", label: "En scène" },
+  { id: "spec", label: "Mesures" },
+  { id: "autre", label: "Sans produit" },
+];
+
 /**
  * La galerie — le bénéfice principal de l'étape 1.
  *
- * Neuf vignettes à l'écran : le bénéfice se voit d'un coup d'œil. Le reste
- * s'ouvre en plein écran, avec les filtres par coloris, pour qui veut explorer.
+ * Deux gestes distincts, volontairement séparés pour qu'ils se comprennent :
  *
- * Une seule rangée de pastilles fait deux choses : elle dit **ce que le
- * commerçant vend** et elle filtre **ses photos**. Les images techniques
- * (tableaux de mesures, schémas) ne dépendent d'aucun coloris : elles restent
- * toujours affichées, car c'est d'elles que viennent les dimensions.
+ *   1. « Quels coloris vends-tu ? » — une décision, avec des cases à cocher.
+ *   2. « Toutes les photos » — une consultation, avec des onglets par nature.
+ *
+ * Les images de mesures portent les dimensions : elles restent visibles quel
+ * que soit le coloris choisi.
  */
 export function ProductGallery({
   images,
@@ -34,108 +53,150 @@ export function ProductGallery({
   images: GalleryImage[];
   colours: GalleryColour[];
 }) {
-  const [selected, setSelected] = useState<string[]>(colours.map((colour) => colour.valueId));
+  const [sold, setSold] = useState<string[]>(colours.map((colour) => colour.valueId));
+  const [tab, setTab] = useState<Tab>("tout");
   const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
     for (const image of images) {
-      if (image.kind === "technique" || !image.variantValueId) {
-        map.technique = (map.technique ?? 0) + 1;
-      } else {
-        map[image.variantValueId] = (map[image.variantValueId] ?? 0) + 1;
-      }
+      if (image.variantValueId) map[image.variantValueId] = (map[image.variantValueId] ?? 0) + 1;
     }
     return map;
   }, [images]);
 
-  const visible = useMemo(
-    () =>
-      images.filter(
-        (image) =>
-          image.kind === "technique" ||
-          !image.variantValueId ||
-          selected.includes(image.variantValueId),
-      ),
-    [images, selected],
-  );
+  const visible = useMemo(() => {
+    const kept = images.filter(
+      (image) => !image.variantValueId || sold.includes(image.variantValueId),
+    );
+    if (tab === "tout") return kept;
+    if (tab === "autre") return kept.filter((image) => image.kind === "sans_produit");
+    return kept.filter((image) => image.kind === tab);
+  }, [images, sold, tab]);
+
+  const tabCount = (id: Tab) => {
+    const kept = images.filter((image) => !image.variantValueId || sold.includes(image.variantValueId));
+    if (id === "tout") return kept.length;
+    if (id === "autre") return kept.filter((image) => image.kind === "sans_produit").length;
+    return kept.filter((image) => image.kind === id).length;
+  };
 
   function toggle(valueId: string) {
-    setSelected((prev) =>
+    setSold((prev) =>
       prev.includes(valueId) ? prev.filter((id) => id !== valueId) : [...prev, valueId],
     );
   }
 
-  const chips = (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {colours.map((colour) => {
-        const active = selected.includes(colour.valueId);
+  const selection = (
+    <section>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">
+        Quels coloris vends-tu ?
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {colours.map((colour) => {
+          const checked = sold.includes(colour.valueId);
+          return (
+            <button
+              key={colour.valueId}
+              type="button"
+              onClick={() => toggle(colour.valueId)}
+              aria-pressed={checked}
+              className={`flex items-center gap-2 rounded-xl border px-2 py-1.5 transition ${
+                checked ? "border-stone-900 bg-stone-50" : "border-stone-200 opacity-70"
+              }`}
+            >
+              {colour.image && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={colour.image}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="h-8 w-8 rounded-lg object-cover"
+                />
+              )}
+              <span className="text-left">
+                <span className="block text-[11px] font-medium leading-tight">{colour.name.replace(/^\d+\s*/, "")}</span>
+                <span className="block text-[10px] leading-tight text-stone-500">
+                  {counts[colour.valueId] ?? 0} photo{(counts[colour.valueId] ?? 0) > 1 ? "s" : ""}
+                </span>
+              </span>
+              <span
+                className={`flex h-4 w-4 items-center justify-center rounded-md border text-[9px] ${
+                  checked ? "border-stone-900 bg-stone-900 text-white" : "border-stone-300"
+                }`}
+              >
+                {checked ? "✓" : ""}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-[10px] text-stone-500">
+        Les images de mesures et les visuels sans produit restent toujours affichés.
+      </p>
+    </section>
+  );
+
+  const tabs = (
+    <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+      {TABS.map((entry) => {
+        const count = tabCount(entry.id);
+        if (count === 0) return null;
         return (
           <button
-            key={colour.valueId}
+            key={entry.id}
             type="button"
-            onClick={() => toggle(colour.valueId)}
-            className={`flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] transition ${
-              active
-                ? "border-stone-900 bg-stone-900 text-white"
-                : "border-stone-300 text-stone-500"
+            onClick={() => setTab(entry.id)}
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] transition ${
+              tab === entry.id ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"
             }`}
           >
-            {colour.image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={colour.image}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="h-5 w-5 rounded-full object-cover"
-              />
-            )}
-            {colour.name.replace(/^\d+\s*/, "")}
-            <span className={active ? "text-white/60" : "text-stone-400"}>
-              {counts[colour.valueId] ?? 0}
-            </span>
+            {entry.label} {count}
           </button>
         );
       })}
-      <span className="rounded-full border border-dashed border-stone-300 px-2 py-1 text-[11px] text-stone-400">
-        techniques {counts.technique ?? 0}
-      </span>
     </div>
   );
 
   return (
-    <section>
-      {chips}
+    <div className="space-y-4">
+      {selection}
 
-      <p className="mt-2 text-[11px] text-stone-500">
-        {visible.length} photo{visible.length > 1 ? "s" : ""} · les images techniques (mesures,
-        schémas) restent toujours affichées
-      </p>
+      <section>
+        <div className="flex items-baseline justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">
+            Toutes les photos
+          </p>
+          <span className="text-[11px] text-stone-500">{visible.length}</span>
+        </div>
 
-      <div className="mt-2 grid grid-cols-3 gap-1.5">
-        {visible.slice(0, PREVIEW).map((image, index) => (
-          <Tile
-            key={image.url}
-            image={image}
-            colours={colours}
-            onClick={() => {
-              setExpanded(true);
-              setOpen(index);
-            }}
-          />
-        ))}
-      </div>
+        <div className="mt-2">{tabs}</div>
 
-      {visible.length > PREVIEW && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="mt-2 w-full rounded-xl border border-stone-300 py-2.5 text-xs font-medium text-stone-700"
-        >
-          Voir les {visible.length} photos →
-        </button>
-      )}
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
+          {visible.slice(0, PREVIEW).map((image, index) => (
+            <Tile
+              key={image.url}
+              image={image}
+              colours={colours}
+              onClick={() => {
+                setExpanded(true);
+                setOpen(index);
+              }}
+            />
+          ))}
+        </div>
+
+        {visible.length > PREVIEW && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="mt-2 w-full rounded-xl border border-stone-300 py-2.5 text-xs font-medium text-stone-700"
+          >
+            Voir les {visible.length} photos →
+          </button>
+        )}
+      </section>
 
       {expanded && (
         <div className="fixed inset-0 z-40 overflow-y-auto bg-stone-50">
@@ -147,16 +208,12 @@ export function ProductGallery({
               </button>
             </div>
 
-            <div className="mt-3">{chips}</div>
+            <div className="mt-3">{selection}</div>
+            <div className="mt-3">{tabs}</div>
 
             <div className="mt-3 grid grid-cols-3 gap-1.5 pb-10">
               {visible.map((image, index) => (
-                <Tile
-                  key={image.url}
-                  image={image}
-                  colours={colours}
-                  onClick={() => setOpen(index)}
-                />
+                <Tile key={image.url} image={image} colours={colours} onClick={() => setOpen(index)} />
               ))}
             </div>
           </div>
@@ -200,7 +257,7 @@ export function ProductGallery({
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -214,7 +271,7 @@ function Tile({
   onClick: () => void;
 }) {
   const colour = colours.find((c) => c.valueId === image.variantValueId);
-  const technical = image.kind === "technique" || !image.variantValueId;
+  const nature = NATURE[image.kind ?? "sans_produit"] ?? NATURE.sans_produit;
 
   return (
     <button
@@ -231,11 +288,9 @@ function Tile({
         className="aspect-square w-full object-cover"
       />
       <span
-        className={`absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
-          technical ? "bg-white/90 text-stone-500" : "bg-stone-900/85 text-white"
-        }`}
+        className={`absolute bottom-1 left-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium text-white ${nature.badge}`}
       >
-        {technical ? "⬚ technique" : colour?.name.replace(/^\d+\s*/, "")}
+        {colour ? colour.name.replace(/^\d+\s*/, "") : nature.label}
       </span>
     </button>
   );
