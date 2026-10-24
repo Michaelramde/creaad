@@ -74,6 +74,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
+pool.on("error", (error) => console.error("connexion base :", error.message));
 let written = 0;
 
 for (const row of kept) {

@@ -128,6 +128,9 @@ if (!process.env.DATABASE_URL) {
 }
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
+// Sans ce gestionnaire, une erreur de connexion remonte en « Unhandled error »
+// et tue le process sans message utile.
+pool.on("error", (error) => console.error("connexion base :", error.message));
 let written = 0;
 let failed = 0;
 
