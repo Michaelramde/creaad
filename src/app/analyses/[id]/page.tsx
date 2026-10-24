@@ -247,8 +247,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       )}
 
       {/* 2 · Convaincre */}
-      {portfolio && portfolio.length > 0 && (
-        <section className="mt-6">
+      {portfolio && portfolio.length > 0 && (        <section className="mt-6">
           <Kicker>Convaincre · les angles du marché ({marketMeta?.adsFound} annonces)</Kicker>
           <div className="mt-2 space-y-2">
             {portfolio.slice(0, 6).map((entry) => (
@@ -274,6 +273,19 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       )}
 
       {/* 3 · Produire */}
+      {identified && (!portfolio || portfolio.length === 0) && (
+        <Card className="mt-6">
+          <Kicker>Convaincre</Kicker>
+          <p className="mt-1 text-sm text-stone-700">
+            Pas encore d&apos;annonces collectées pour ce modèle.
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-stone-500">
+            La collecte tourne toutes les 6 heures sur les archétypes du catalogue. Les angles du
+            marché apparaîtront ici dès que ce modèle sera couvert.
+          </p>
+        </Card>
+      )}
+
       {kit?.angles && kit.angles.length > 0 && (
         <section className="mt-6">
           <Kicker>Produire · tes créas</Kicker>

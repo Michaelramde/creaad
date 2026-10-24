@@ -1,25 +1,21 @@
 {
-  "_comment": "Requêtes collectées par le collecteur planifié. Un archétype = un slug + une requête par plateforme.",
+  "_comment": "Requêtes collectées par le collecteur planifié. Un archétype = un slug + une requête. La rotation en traite un par exécution (toutes les 6 h).",
   "targets": [
-    {
-      "archetypeSlug": "beaute-serum-30ml",
-      "query": "serum visage",
-      "country": "CI"
-    },
-    {
-      "archetypeSlug": "cheveux-perruque-lace",
-      "query": "perruque lace",
-      "country": "CI"
-    },
-    {
-      "archetypeSlug": "gadgets-ecouteur-bluetooth",
-      "query": "ecouteur bluetooth",
-      "country": "CI"
-    },
-    {
-      "archetypeSlug": "mode-robe-wax",
-      "query": "robe wax",
-      "country": "CI"
-    }
+    { "archetypeSlug": "beaute-serum-30ml", "query": "serum visage", "country": "CI" },
+    { "archetypeSlug": "mode-sac", "query": "sac homme", "country": "CI" },
+    { "archetypeSlug": "gadgets-ecouteur-bluetooth", "query": "ecouteur bluetooth", "country": "CI" },
+    { "archetypeSlug": "cheveux-perruque-lace", "query": "perruque lace", "country": "CI" },
+    { "archetypeSlug": "mode-robe-wax", "query": "robe wax", "country": "CI" },
+    { "archetypeSlug": "beaute-creme-visage", "query": "creme visage", "country": "CI" },
+    { "archetypeSlug": "beaute-savon-noir", "query": "savon noir", "country": "CI" },
+    { "archetypeSlug": "beaute-huile-corporelle", "query": "huile corporelle", "country": "CI" },
+    { "archetypeSlug": "cheveux-huile-croissance", "query": "huile cheveux", "country": "CI" },
+    { "archetypeSlug": "cheveux-mousse-boucles", "query": "produit boucles cheveux", "country": "CI" },
+    { "archetypeSlug": "gadgets-montre-connectee", "query": "montre connectee", "country": "CI" },
+    { "archetypeSlug": "gadgets-ventilateur-portable", "query": "ventilateur portable", "country": "CI" },
+    { "archetypeSlug": "mode-chaussure-homme", "query": "chaussure homme", "country": "CI" },
+    { "archetypeSlug": "mode-sac-femme", "query": "sac femme", "country": "CI" },
+    { "archetypeSlug": "beaute-parfum", "query": "parfum femme", "country": "CI" },
+    { "archetypeSlug": "gadgets-coque-telephone", "query": "coque telephone", "country": "CI" }
   ]
 }
