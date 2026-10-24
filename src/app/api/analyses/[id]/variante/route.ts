@@ -94,8 +94,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
      * attendre au commerçant n'a aucun sens alors que le kit archétype est
      * déjà prêt. On la lance derrière, elle enrichit `ad_observations`, et la
      * page se rafraîchit avec les angles du produit.
+     *
+     * On lit l'archétype sur **l'analyse** : la fiche locale a été lue avant
+     * le routage et peut encore être vide à cet instant.
      */
-    if (record.archetypeSlug) {
+    // Relecture : l'archétype vient d'être résolu pendant la livraison.
+    const [fresh] = await db
+      .select({ archetypeSlug: analyses.archetypeSlug })
+      .from(analyses)
+      .where(eq(analyses.id, analysis.id))
+      .limit(1);
+
+    const archetypeSlug = fresh?.archetypeSlug ?? record.archetypeSlug;
+    if (!archetypeSlug) {
+      // Rien à quoi rattacher les annonces : la page restera sur le repli.
+    } else {
       const brand = String((record.facts.brand as { value?: unknown } | undefined)?.value ?? "");
       const model = String((record.facts.model as { value?: unknown } | undefined)?.value ?? "");
 
@@ -104,11 +117,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           const escalation = await findProductAds(
             {
               productRef: record.productId,
-              archetypeSlug: record.archetypeSlug as string,
+              archetypeSlug,
               country: analysis.country,
               brand,
               model,
-              category: record.specs["Category"] ?? "produit",
+              category: "produit",
             },
             providers.productPipeline?.metaAds,
             { analysisId: analysis.id },

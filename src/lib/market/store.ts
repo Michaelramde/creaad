@@ -162,6 +162,9 @@ export async function buildMatrixForProduct(
     referenceAds: [],
     referenceMarkets: [],
     now: options.now,
+    // Un produit précis a peu d'annonces par nature : 5 suffisent à dire
+    // qui le vend, là où un archétype en exige 15.
+    minAds: 5,
   });
 
   return { matrix, report };

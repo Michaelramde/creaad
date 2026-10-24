@@ -18,6 +18,14 @@ import type {
 } from "./types.ts";
 import { ANGLE_FAMILIES } from "./types.ts";
 
+/**
+ * Seuil d'échantillon pour publier une carte.
+ *
+ * 15 annonces valent pour un **marché d'archétype** (des milliers d'annonceurs
+ * possibles). Pour un **produit précis**, le périmètre est étroit par nature :
+ * 5 annonces de 4 annonceurs disent déjà qui vend cet article. On laisse donc
+ * l'appelant fixer son seuil.
+ */
 export const MIN_ADS_FOR_MATRIX = 15;
 /** En dessous, une famille ne peut pas dépasser « observé non prouvé ». */
 export const MIN_ADS_PER_FAMILY = 3;
@@ -172,13 +180,17 @@ const PRIORITY: Record<AngleStatus, number> = {
   unobserved: 10,
 };
 
-export function assessQuality(ads: readonly AdObservation[], now: number): DataQuality {
+export function assessQuality(
+  ads: readonly AdObservation[],
+  now: number,
+  minAds: number = MIN_ADS_FOR_MATRIX,
+): DataQuality {
   const gaps: string[] = [];
   const platforms = [...new Set(ads.map((a) => a.platform))];
   const distinctAdvertisers = advertisersOf(ads).length;
 
   const confidence: DataQuality["confidence"] =
-    ads.length < MIN_ADS_FOR_MATRIX
+    ads.length < minAds
       ? "insufficient"
       : ads.length < 30
         ? "low"
@@ -211,11 +223,13 @@ export interface BuildMatrixInput {
   referenceAds?: readonly AdObservation[];
   referenceMarkets?: string[];
   now?: number;
+  /** Seuil d'échantillon — 15 par défaut, plus bas pour un produit précis. */
+  minAds?: number;
 }
 
 export function buildMatrix(input: BuildMatrixInput): SaturationMatrix {
   const now = input.now ?? Date.now();
-  const quality = assessQuality(input.ads, now);
+  const quality = assessQuality(input.ads, now, input.minAds ?? MIN_ADS_FOR_MATRIX);
   const publishable = quality.confidence !== "insufficient";
 
   const angles: AngleStats[] = ANGLE_FAMILIES.filter((f) => f !== "non-classe").map((family) => {
