@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
@@ -10,6 +10,8 @@ import { persistAnalysisOutcome } from "@/lib/pipeline/persist";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
 import { createProviders } from "@/lib/providers";
 import { getFreshRecord } from "@/lib/products/records";
+import { classifyProductRecord } from "@/lib/products/enrich-images";
+import { env } from "@/lib/env";
 import { validateSelection } from "@/lib/products/images";
 import { releaseAnalysis } from "@/lib/wallet/repo";
 
@@ -93,6 +95,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
      * L' étude de marché est une **seconde demande**, facturée séparément,
      * déclenchée par `POST /api/analyses/:id/marche`.
      */
+    /**
+     * Le classement des images tourne maintenant : c'est lui qui relie chaque
+     * photo à un coloris. Sans lui, cocher un coloris ne changerait rien à
+     * l'export. ~90 s pour 40 images, apres la reponse.
+     */
+    if (record && env.GEMINI_API_KEY) {
+      after(async () => {
+        try {
+          const done = await classifyProductRecord(record.productId, env.GEMINI_API_KEY as string);
+          if (!done.alreadyDone) {
+            console.log(`[variante] images classées : ${done.classified}/${done.total}`);
+          }
+        } catch (error) {
+          console.warn("[variante] classement des images échoué", error);
+        }
+      });
+    }
+
     return NextResponse.json(outcome.payload);
   } catch (error) {
     await releaseAnalysis({
