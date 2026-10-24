@@ -61,11 +61,24 @@ const zipCount = async (query = "") => {
 const all = await zipCount();
 console.log(`export initial : ${all.mo} Mo`);
 
+/* Sans choix proposé, on prend le premier coloris de la fiche. */
+const chosen = [];
+let target = chosen[0]?.valueId;
+if (!target) {
+  const axes = await pool.query(
+    "SELECT variant_axes FROM product_records WHERE product_id = $1",
+    [(await pool.query("SELECT product_ref FROM analyses WHERE id = $1", [created.analysisId])).rows[0]?.product_ref],
+  );
+  const values = (axes.rows[0]?.variant_axes?.[0]?.values ?? []).filter((v) => v.image);
+  target = values[0]?.valueId;
+}
+console.log(`coloris visés : ${target ?? "aucun"}`);
+
 /* 2. On ne garde qu'un coloris */
 const only = await fetch(`${BASE}/api/analyses/${created.analysisId}/coloris`, {
   method: "POST",
   headers: { "Content-Type": "application/json", cookie, Origin: BASE },
-  body: JSON.stringify({ selected: [chosen[0].valueId] }),
+  body: JSON.stringify({ selected: target ? [target] : [] }),
 });
 console.log(`sélection enregistrée : HTTP ${only.status}`);
 
