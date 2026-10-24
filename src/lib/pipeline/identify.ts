@@ -7,10 +7,13 @@
  */
 import { buildArchetype, type Archetype } from "../archetype/extract.ts";
 import { pickBest } from "../matching/score.ts";
-import { centroid } from "../matching/text.ts";
+import { centroid, cosine } from "../matching/text.ts";
 import type { Attributes, Category, Embedding, ListingCandidate, MatchResult, Regime } from "../matching/types.ts";
 import { compactVariant, parseVariantLabel } from "../matching/variant.ts";
 import type { Providers } from "../providers/index.ts";
+
+/** Similarité visuelle minimale pour qu'un candidat soit seulement examiné. */
+const VISUAL_ACCEPT = 0.55;
 
 /** Lecture OCR des photos — une panne ne fait pas échouer l'étape. */
 async function runOcr(
@@ -188,6 +191,28 @@ export async function identifyArticle(  providers: Providers,
     );
   }
 
+  /**
+   * La ressemblance est un **préalable**, pas un bonus.
+   *
+   * Sans ce filtre, un produit qui ne ressemble pas du tout à la photo peut
+   * gagner sur le texte et les attributs — c'est ce qui donnait « vision 0.15 »
+   * avec un score global supérieur. Un article qu'on ne reconnaît pas des yeux
+   * ne peut pas être l'article du commerçant.
+   */
+  const plausible = candidates.filter((candidate) => {
+    const similarity =
+      userEmbedding && candidate.embedding ? cosine(userEmbedding, candidate.embedding) : null;
+    if (similarity !== null) return (similarity ?? 0) >= VISUAL_ACCEPT;
+
+    const judged = assessments?.get(candidate.externalId)?.visual;
+    return judged === undefined || judged >= 0.45;
+  });
+
+  const pool = plausible.length > 0 ? plausible : candidates;
+  if (plausible.length === 0 && candidates.length > 0) {
+    warnings.push("Aucun produit trouvé ne ressemble assez à la photo.");
+  }
+
   const match = pickBest(
     {
       userText: corpus,
@@ -195,7 +220,7 @@ export async function identifyArticle(  providers: Providers,
       userAttributes: attributes,
       userVariant: compactVariant(parseVariantLabel(input.variantLabel)),
     },
-    candidates,
+    pool,
     assessments,
   );
 
