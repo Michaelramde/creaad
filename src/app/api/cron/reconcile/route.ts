@@ -1,14 +1,23 @@
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
+import { db } from "@/lib/db";
+import { analyses } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { pendingTopupsOlderThan, syncTopup } from "@/lib/payments/settle";
+import { releaseAnalysis } from "@/lib/wallet/repo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** Au-delà, une analyse laissée en cours est considérée abandonnée. */
+const ABANDON_MINUTES = 30;
+
 /**
- * Filet de sécurité des webhooks perdus.
- * Déclenché par Vercel Cron (voir vercel.json) toutes les 2 minutes.
+ * Filet de sécurité des webhooks perdus — et des analyses abandonnées.
+ *
+ * Un commerçant qui ferme l'onglet après le lancement laisse une réservation
+ * de 1 000 FCFA bloquée. Sans ce nettoyage, son solde baisse sans contrepartie.
  */
 export async function GET(req: Request) {
   const secret = req.headers.get("authorization");
@@ -33,9 +42,42 @@ export async function GET(req: Request) {
     }
   }
 
+  /* ── Analyses abandonnées : on rend la réservation ────────────────────── */
+  const abandoned = await db
+    .select({ id: analyses.id, userId: analyses.userId, reservedXof: analyses.reservedXof })
+    .from(analyses)
+    .where(
+      and(
+        inArray(analyses.status, ["ocr", "appariement", "reservee", "creee"]),
+        sql`${analyses.reservedXof} > 0`,
+        sql`${analyses.createdAt} < now() - (${ABANDON_MINUTES} || ' minutes')::interval`,
+      ),
+    )
+    .limit(20);
+
+  let released = 0;
+  for (const row of abandoned) {
+    try {
+      await releaseAnalysis({
+        userId: row.userId,
+        analysisId: row.id,
+        reservedXof: row.reservedXof,
+        step: 1,
+      });
+      await db
+        .update(analyses)
+        .set({ status: "echouee", failureCode: "ABANDONED", updatedAt: new Date() })
+        .where(eq(analyses.id, row.id));
+      released += 1;
+    } catch (error) {
+      console.error("[cron/reconcile] libération impossible", row.id, error);
+    }
+  }
+
   return NextResponse.json({
     checked: pending.length,
     results,
+    abandoned: { found: abandoned.length, released },
     base: env.GP_BASE,
     at: new Date().toISOString(),
   });
