@@ -189,6 +189,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             <img
               src={candidateImage}
               alt=""
+              referrerPolicy="no-referrer"
+              loading="lazy"
               className="h-16 w-16 shrink-0 rounded-xl border border-stone-200 object-cover"
             />
           )}
@@ -232,7 +234,12 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
               {images.map((image) => (
                 <figure key={image.id} className="overflow-hidden rounded-xl border border-stone-200">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={image.url} alt={image.slot} className="aspect-square w-full object-cover" />
+                  <img
+                    src={image.url}
+                    alt={image.slot}
+                    referrerPolicy="no-referrer"
+                    className="aspect-square w-full object-cover"
+                  />
                   <figcaption className="px-1.5 py-1 text-[10px] text-stone-500">
                     {image.slot.replace("-", " ")}
                   </figcaption>
