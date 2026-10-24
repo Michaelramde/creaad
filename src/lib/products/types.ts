@@ -88,23 +88,34 @@ export interface ProductRecord {
   expiresAt: Date;
 }
 
-/** Le commerçant choisit une valeur par axe produit. */
-export type VariantSelection = Record<string, string>;
+/**
+ * Le commerçant choisit une **ou plusieurs** valeurs par axe produit : celui
+ * qui vend du noir et du marron doit pouvoir le dire.
+ */
+export type VariantSelection = Record<string, string[]>;
 
 /** Axes qui décrivent le produit — la logistique est exclue. */
 export function isProductAxis(axis: string): boolean {
   return !/ship|expéd|exped|envoi|delivery|livraison/i.test(axis);
 }
 
-/** Coloris retenus, dans l'ordre des axes. */
+/** Valeurs retenues, dans l'ordre des axes puis de la sélection. */
 export function selectedValues(
   axes: readonly VariantAxis[],
-  selection: VariantSelection,
+  selection: VariantSelection | undefined,
 ): VariantValue[] {
-  return axes
-    .filter((axis) => isProductAxis(axis.axis))
-    .map((axis) => axis.values.find((value) => value.valueId === selection[axis.axis]))
-    .filter((value): value is VariantValue => value !== undefined);
+  if (!selection) return [];
+
+  const values: VariantValue[] = [];
+  for (const axis of axes) {
+    if (!isProductAxis(axis.axis)) continue;
+    const chosen = selection[axis.axis] ?? [];
+    for (const valueId of chosen) {
+      const value = axis.values.find((candidate) => candidate.valueId === valueId);
+      if (value) values.push(value);
+    }
+  }
+  return values;
 }
 
 /** Le produit n'a qu'une seule combinaison utile : aucun écran à afficher. */

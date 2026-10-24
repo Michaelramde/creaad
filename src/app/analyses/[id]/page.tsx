@@ -14,6 +14,7 @@ import { analyses, archetypes, creativeKits, marketKits, planImages, plans, prod
 import { ANGLE_LABELS, type AngleFamily } from "@/lib/market/types";
 import { buildPortfolio } from "@/lib/market/portfolio";
 import { buildMatrixForProduct } from "@/lib/market/store";
+import { getFreshRecord } from "@/lib/products/records";
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
@@ -125,6 +126,19 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
    */
   let productPortfolio: PortfolioEntry[] | null = null;
   let productMarket: { adsFound: number; scope: string | null; note: string | null } | null = null;
+
+  /** Toutes les photos trouvées du produit — la galerie fournisseur. */
+  let gallery: { url: string; origin: string }[] = [];
+  let variantImages: string[] = [];
+
+  const productRecord = row.productRef ? await getFreshRecord("aliexpress", row.productRef) : null;
+
+  if (productRecord) {
+    gallery = productRecord.gallery.map((image) => ({ url: image.url, origin: image.origin }));
+    variantImages = productRecord.variantAxes.flatMap((axis) =>
+      axis.values.map((value) => value.image).filter((url): url is string => Boolean(url)),
+    );
+  }
 
   if (row.productRef && row.status === "livree") {
     const built = await buildMatrixForProduct(row.productRef, row.country);
@@ -271,6 +285,29 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         />
       )}
 
+      {/* Toutes les photos trouvées du produit */}
+      {gallery.length > 1 && (
+        <section className="mt-4">
+          <Kicker>Les photos du produit ({gallery.length})</Kicker>
+          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+            {gallery.map((image) => (
+              <a
+                key={image.url}
+                href={image.url}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0"
+              >
+                <SafeImage
+                  src={image.url}
+                  className="h-24 w-24 rounded-xl border border-stone-200 object-cover"
+                />
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* 1 · Montrer */}
       {plan && (
         <Card className="mt-4">
@@ -333,34 +370,11 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         </section>
       )}
 
-      {/* 2b · Convaincre — le marché du type de produit */}
-      {portfolio && portfolio.length > 0 && (
-        <section className="mt-6">
-          <Kicker>
-            Convaincre · le marché du {archetypeLabel ?? "produit"} ({marketMeta?.adsFound} annonces)
-          </Kicker>
-          <div className="mt-2 space-y-2">
-            {portfolio.slice(0, 6).map((entry) => (
-              <Card key={entry.family}>
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="text-sm font-semibold">
-                    {ANGLE_LABELS[entry.family as AngleFamily] ?? entry.family}
-                  </h2>
-                  <Badge tone={ACTION_TONE[entry.action] ?? "muted"}>
-                    {ACTION_LABEL[entry.action] ?? entry.action}
-                  </Badge>
-                </div>
-                <p className="mt-1 text-[11px] text-stone-500">
-                  {entry.figures.advertisers} annonceur
-                  {entry.figures.advertisers > 1 ? "s" : ""} ·{" "}
-                  {Math.round(entry.figures.medianDaysRunning)} j de diffusion médiane
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-stone-700">{entry.rationale}</p>
-              </Card>
-            ))}
-          </div>
-        </section>
-      )}
+      {/*
+        Le marché de l'archétype n'est plus affiché : il parle du type de
+        produit, pas de celui du commerçant. Il reste calculé et stocké — il
+        alimente le kit production et sert de repli.
+      */}
 
       {/* 3 · Produire */}
       {identified && (!portfolio || portfolio.length === 0) && (

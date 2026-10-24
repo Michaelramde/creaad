@@ -25,12 +25,10 @@ export function imagesForSelection(
   const variantImages: PoolImage[] = [];
   const seen = new Set<string>();
 
-  if (selection) {
-    for (const value of selectedValues(record.variantAxes, selection)) {
-      if (!value.image || seen.has(value.image)) continue;
-      seen.add(value.image);
-      variantImages.push({ url: value.image, origin: "variant" });
-    }
+  for (const value of selectedValues(record.variantAxes, selection)) {
+    if (!value.image || seen.has(value.image)) continue;
+    seen.add(value.image);
+    variantImages.push({ url: value.image, origin: "variant" });
   }
 
   const sharedImages: PoolImage[] = [];
@@ -57,10 +55,11 @@ export function validateSelection(
   const unknown: string[] = [];
 
   for (const axis of record.variantAxes) {
-    const valueId = selection[axis.axis];
-    if (!valueId) continue;
-    if (!axis.values.some((value) => value.valueId === valueId)) {
-      unknown.push(`${axis.axis} = ${valueId}`);
+    const valueIds = selection[axis.axis] ?? [];
+    for (const valueId of valueIds) {
+      if (!axis.values.some((value) => value.valueId === valueId)) {
+        unknown.push(`${axis.axis} = ${valueId}`);
+      }
     }
   }
 

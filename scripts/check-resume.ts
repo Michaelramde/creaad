@@ -16,7 +16,7 @@ const result = await runAnalysis(providers, {
   country: "CI",
   photos: [{ url: record.gallery[0]?.url ?? "" }],
   productRef: PRODUCT,
-  variantSelection: { [record.variantAxes[0]?.axis ?? "Color"]: brown?.valueId ?? "" },
+  variantSelection: { [record.variantAxes[0]?.axis ?? "Color"]: [brown?.valueId ?? ""] },
 });
 
 console.log(`produit relu   : ${result.product ? "OUI" : "non"}`);

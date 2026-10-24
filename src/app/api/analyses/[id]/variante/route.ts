@@ -20,7 +20,8 @@ import { releaseAnalysis } from "@/lib/wallet/repo";
 export const maxDuration = 300;
 
 const bodySchema = z.object({
-  selection: z.record(z.string(), z.string()),
+  // Un ou plusieurs coloris par axe : le commerçant peut en vendre plusieurs.
+  selection: z.record(z.string(), z.array(z.string()).min(1).max(20)),
 });
 
 /**

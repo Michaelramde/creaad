@@ -5,7 +5,7 @@
  * quelques appels réseau (OCR, vision) et deux calculs purs. Une app
  * minimaliste n'a pas besoin d'un orchestrateur distribué.
  */
-import { buildCreativeStep, type CreativeStepResult } from "./creative.ts";
+import type { CreativeStepResult } from "./creative.ts";
 import { identifyProduct, type ProductIdentification } from "./identify-product.ts";
 import { imagesForSelection } from "../products/images.ts";
 import { getFreshRecord, upsertRecord } from "../products/records.ts";
@@ -90,7 +90,7 @@ export interface RunAnalysisInput {
   /** Photo publique, pour la recherche inversée par Apify. */
   publicImageUrl?: string;
   /** Coloris retenu — présent uniquement à la reprise. */
-  variantSelection?: Record<string, string>;
+  variantSelection?: Record<string, string[]>;
   /** Produit déjà identifié : la reprise ne relance aucune recherche payante. */
   productRef?: string;
   analysisId?: string;
@@ -224,39 +224,19 @@ export async function runAnalysis(
     return { identify, ...(product ? { product } : {}), plan, market: { matrix, portfolio }, warnings, blocked: true };
   }
 
-  /* ── production : angles, hooks, scripts, prompts ────────────────────── */
-  const variant = identify.match.candidate?.variant;
-  const creative = await buildCreativeStep(providers.writer, {
-    product: {
-      title: identify.match.candidate?.title ?? input.userText ?? identify.archetype.label,
-      archetype: identify.archetype.label,
-      category,
-      claims: input.userText ? [input.userText] : [],
-      specs: [identify.archetype.capacity].filter((v): v is string => Boolean(v)),
-      ...(variant?.colorName || variant?.capacity
-        ? {
-            variant: [variant?.colorName, variant?.capacity].filter(Boolean).join(" "),
-          }
-        : {}),
-    },
-    portfolio: portfolio.entries.slice(0, 6).map((entry) => ({
-      family: entry.family,
-      action: entry.action,
-      advertisers: entry.figures.advertisers,
-      medianDays: entry.figures.medianDaysRunning,
-      rationale: entry.rationale,
-    })),
-    country: input.country,
-    language: "fr",
-  });
-  warnings.push(...creative.warnings);
-
+  /**
+   * La rédaction du kit production **n'est plus dans le pipeline**.
+   *
+   * Elle est la seule étape lente qui ne bloque rien : la planche et le marché
+   * sont déjà exploitables. On rend la main ici (≈35 s au lieu de ≈55 s) et
+   * `repairCreativeKit` produit R3 après la réponse ; la page l'annonce puis
+   * l'affiche dès qu'il arrive.
+   */
   return {
     identify,
     ...(product ? { product } : {}),
     plan,
     market: { matrix, portfolio },
-    creative,
     warnings,
     blocked: false,
   };
