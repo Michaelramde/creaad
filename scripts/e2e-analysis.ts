@@ -10,7 +10,7 @@ import { sourceListings } from "@/lib/db/schema";
 import { createProviders } from "@/lib/providers";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
 
-const [listing] = await db.select().from(sourceListings).limit(1);
+const [listing] = await db.select().from(sourceListings).limit(1).offset(Number(process.env.LISTING_INDEX ?? 0));
 if (!listing) {
   console.error("Aucun listing en base — lance d'abord la collecte AliExpress.");
   process.exit(1);

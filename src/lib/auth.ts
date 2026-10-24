@@ -35,11 +35,13 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    requireEmailVerification: true,
+    // Sans clé Resend, exiger la vérification rendrait l'app inutilisable :
+    // on l'active par variable d'environnement, quand l'envoi est configuré.
+    requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
     minPasswordLength: 8,
   },
   emailVerification: {
-    sendOnSignUp: true,
+    sendOnSignUp: env.REQUIRE_EMAIL_VERIFICATION,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
       await sendEmail({

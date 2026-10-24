@@ -12,6 +12,15 @@ const schema = z.object({
   BETTER_AUTH_SECRET: z.string().min(16),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default("Creaad <no-reply@creaad.app>"),
+  /**
+   * Vérification d'email obligatoire avant connexion.
+   * Désactivée par défaut : sans clé Resend, aucun utilisateur ne pourrait
+   * entrer. Le wallet reste le vrai verrou (il faut payer pour analyser).
+   */
+  REQUIRE_EMAIL_VERIFICATION: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),

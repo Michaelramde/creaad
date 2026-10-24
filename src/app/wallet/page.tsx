@@ -106,6 +106,10 @@ export default function WalletPage() {
         Wave · Orange Money · MTN — validation sur ton téléphone
       </p>
 
+      <a href="/historique" className="mt-6 block text-center text-xs text-stone-500 underline">
+        Mes analyses
+      </a>
+
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
     </Shell>
   );

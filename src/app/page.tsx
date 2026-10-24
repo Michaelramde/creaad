@@ -91,6 +91,10 @@ export default function Home() {
         Chaque kit est sourcé, et rejeté s&apos;il ne respecte pas le contrat — mieux vaut
         pas de rapport qu&apos;un rapport inventé.
       </p>
+
+      <Link href="/historique" className="mt-6 block text-center text-xs text-stone-500 underline">
+        Mes analyses
+      </Link>
     </main>
   );
 }
