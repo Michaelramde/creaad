@@ -50,7 +50,15 @@ interface StoredMatch {
   score?: number;
   accepted?: boolean;
   candidate?: { title?: string; url?: string; images?: { url: string }[] };
-  product?: { title?: string; url?: string; image?: string | null; productId?: string };
+  product?: {
+    title?: string;
+    url?: string;
+    image?: string | null;
+    productId?: string;
+    price?: number | null;
+    currency?: string | null;
+    facts?: Record<string, unknown>;
+  };
   components?: Record<string, { points: number; max: number; evidence: boolean; detail: string }>;
   gateReason?: string;
 }
@@ -139,14 +147,18 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   }
 
   const pendingVariant = row.status === "variante_a_choisir";
-  const identified = match?.accepted === true || pendingVariant;
+  // Un produit identifié fait foi, même si l'ancien matcher n'a pas conclu :
+  // les deux voies coexistent et seule la payante a le dernier mot.
+  const identified = match?.accepted === true || Boolean(match?.product) || pendingVariant;
   const candidateImage = match?.product?.image ?? match?.candidate?.images?.[0]?.url ?? null;
   const candidateTitle = match?.product?.title ?? match?.candidate?.title ?? null;
   const candidateUrl = match?.product?.url ?? match?.candidate?.url ?? null;
 
-  // Le nom saisi par le commerçant d'abord : « Mode Sac » ne veut rien dire.
+  // Le nom saisi d'abord, puis le produit réellement identifié : « Sac » seul
+  // ne dit rien au commerçant.
   const title =
     product?.name?.trim() ||
+    match?.product?.title ||
     archetypeLabel ||
     (row.archetypeSlug ? row.archetypeSlug.replace(/-/g, " ") : "Produit");
 
@@ -185,9 +197,11 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
           <p className="mt-0.5 text-xs leading-relaxed text-stone-500">
             {pendingVariant
               ? "Le produit a été identifié chez le fournisseur. Choisis le coloris que tu vends."
-              : identified
-                ? explainScore(match)
-                : explainFailure(match)}
+              : match?.product
+                ? explainProduct(match)
+                : identified
+                  ? explainScore(match)
+                  : explainFailure(match)}
           </p>
         </div>
       </div>
@@ -308,13 +322,11 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <section className="mt-6">
           <Kicker>Produire · tes créas</Kicker>
 
-          {kit.bigIdea && (
+          {kit.bigIdea?.trim() ? (
             <Card className="mt-2 bg-stone-900 text-white">
               <p className="text-[15px] leading-relaxed">{kit.bigIdea}</p>
             </Card>
-          )}
-
-          <div className="mt-2 space-y-2">
+          ) : null}          <div className="mt-2 space-y-2">
             {kit.angles.slice(0, 3).map((angle) => (
               <Card key={angle.id}>
                 <p className="text-sm font-semibold">« {angle.hook} »</p>
@@ -445,8 +457,19 @@ function ScoreRing({ value, tone }: { value: number; tone: "ok" | "warn" }) {
   );
 }
 
-function explainScore(match: StoredMatch | null): string {
-  const visual = match?.components?.visual;
+/** Verdict quand le produit vient de la fiche fournisseur, pas du matcher. */
+function explainProduct(match: StoredMatch | null): string {
+  const factKeys = Object.keys(match?.product?.facts ?? {}).length;
+  const price = match?.product?.price;
+  const currency = match?.product?.currency;
+
+  const parts = ["Fiche fournisseur retrouvée par l'image."];
+  if (typeof price === "number") parts.push(`Prix public ${price} ${currency ?? ""}`.trim() + ".");
+  if (factKeys > 0) parts.push(`${factKeys} fait(s) vérifié(s).`);
+  return parts.join(" ");
+}
+
+function explainScore(match: StoredMatch | null): string {  const visual = match?.components?.visual;
   const text = match?.components?.ocr;
   if (visual && visual.points > visual.max * 0.6) return "La photo et l'annonce montrent bien le même produit.";
   if (text && text.points > text.max * 0.6) return "Le nom du produit correspond à l'annonce trouvée.";

@@ -250,7 +250,27 @@ export async function persistAnalysisOutcome(ctx: PersistContext): Promise<Persi
       settledXof: creditXof,
       matchScore: result.product ? 95 : result.identify.match.score,
       matchCoverage: result.identify.match.coverage.toFixed(2),
-      matchResult: result.identify.match as unknown as Record<string, unknown>,
+      /**
+       * On conserve le produit identifié **avec** la décision du matcher :
+       * sans lui, la page affichait « produit non retrouvé » avec un score
+       * de 95, et proposait un candidat qui n'était pas le bon.
+       */
+      matchResult: {
+        ...(result.identify.match as unknown as Record<string, unknown>),
+        ...(result.product
+          ? {
+              product: {
+                productId: result.product.record.productId,
+                title: result.product.record.title,
+                url: result.product.record.url,
+                image: result.product.record.gallery[0]?.url ?? null,
+                price: result.product.record.price ?? null,
+                currency: result.product.record.currency ?? null,
+                facts: result.product.facts,
+              },
+            }
+          : {}),
+      },
       archetypeSlug: result.identify.archetype.slug,
       ...(result.product ? { productRef: result.product.record.productId } : {}),
       pendingVariants: null,
