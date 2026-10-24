@@ -155,8 +155,22 @@ export async function identifyArticle(  providers: Providers,
   });
 
   /* 4 — Candidats fournisseurs : déjà lancés quand le produit était nommé. */
-  const candidates =
+  const rawCandidates =
     (await searchPromise) ?? (await searchSources(providers, archetype, input, warnings));
+
+  /**
+   * Déduplication puis plafond à 8 — exactement ce que le comparateur visuel
+   * examine. Sans ça, deux sources peuvent produire 16 candidats dont 8 ne
+   * sont jamais évalués : le gagnant ressortait alors « sans preuve ».
+   * À doublon, on garde la version qui porte un vecteur.
+   */
+  const byId = new Map<string, ListingCandidate>();
+  for (const candidate of rawCandidates) {
+    const key = candidate.externalId;
+    const existing = byId.get(key);
+    if (!existing || (!existing.embedding && candidate.embedding)) byId.set(key, candidate);
+  }
+  const candidates = [...byId.values()].slice(0, 8);
 
   /* 5 — Appariement. */
   let assessments: Map<string, { visual: number; text: number }> | undefined;
