@@ -128,34 +128,48 @@ export default function NewAnalysisPage() {
         planche plus fidèle.
       </p>
 
-      {/* Photos */}
-      <div className="mt-5 grid grid-cols-3 gap-2">
-        {images.map((image, index) => (
-          <div key={index} className="relative overflow-hidden rounded-xl border border-stone-200">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image.dataUrl} alt="" className="aspect-square w-full object-cover" />
+      {/* Photos : une grande zone quand c'est vide, une grille ensuite */}
+      {images.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="mt-5 flex w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-stone-300 bg-white px-6 py-10 active:scale-[0.99]"
+        >
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-stone-900 text-xl text-white">
+            +
+          </span>
+          <span className="mt-3 text-sm font-medium">Ajoute une photo</span>
+          <span className="mt-1 text-xs text-stone-500">Prends-la maintenant ou choisis dans ta galerie</span>
+        </button>
+      ) : (
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          {images.map((image, index) => (
+            <div key={index} className="relative overflow-hidden rounded-xl border border-stone-200">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={image.dataUrl} alt="" className="aspect-square w-full object-cover" />
+              <button
+                type="button"
+                onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))}
+                className="absolute right-1 top-1 h-6 w-6 rounded-full bg-black/60 text-xs text-white"
+                aria-label="Retirer"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+
+          {images.length < MAX_PHOTOS && (
             <button
               type="button"
-              onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))}
-              className="absolute right-1 top-1 h-6 w-6 rounded-full bg-black/60 text-xs text-white"
-              aria-label="Retirer"
+              onClick={() => inputRef.current?.click()}
+              className="flex aspect-square w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-white text-stone-400 active:scale-[0.98]"
             >
-              ×
+              <span className="text-2xl leading-none">+</span>
+              <span className="mt-1 text-[10px]">Ajouter</span>
             </button>
-          </div>
-        ))}
-
-        {images.length < MAX_PHOTOS && (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="flex aspect-square w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-white text-stone-400 active:scale-[0.98]"
-          >
-            <span className="text-2xl leading-none">+</span>
-            <span className="mt-1 text-[10px]">Photo</span>
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <input
         ref={inputRef}
