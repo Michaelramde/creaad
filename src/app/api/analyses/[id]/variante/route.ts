@@ -1,17 +1,20 @@
 import { and, eq } from "drizzle-orm";
 import { headers } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { analyses } from "@/lib/db/schema";
+import { findProductAds } from "@/lib/market/product-market";
 import { persistAnalysisOutcome } from "@/lib/pipeline/persist";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
 import { createProviders } from "@/lib/providers";
 import { getFreshRecord } from "@/lib/products/records";
 import { validateSelection } from "@/lib/products/images";
 import { releaseAnalysis } from "@/lib/wallet/repo";
+
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   selection: z.record(z.string(), z.string()),
@@ -83,6 +86,43 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       creditXof: analysis.reservedXof ?? 0,
       result,
     });
+
+    /**
+     * Recherche des annonces **de ce produit** — après la réponse.
+     *
+     * L'échelle peut enchaîner trois appels et dépasser la minute : la faire
+     * attendre au commerçant n'a aucun sens alors que le kit archétype est
+     * déjà prêt. On la lance derrière, elle enrichit `ad_observations`, et la
+     * page se rafraîchit avec les angles du produit.
+     */
+    if (record.archetypeSlug) {
+      const brand = String((record.facts.brand as { value?: unknown } | undefined)?.value ?? "");
+      const model = String((record.facts.model as { value?: unknown } | undefined)?.value ?? "");
+
+      after(async () => {
+        try {
+          const escalation = await findProductAds(
+            {
+              productRef: record.productId,
+              archetypeSlug: record.archetypeSlug as string,
+              country: analysis.country,
+              brand,
+              model,
+              category: record.specs["Category"] ?? "produit",
+            },
+            providers.productPipeline?.metaAds,
+            { analysisId: analysis.id },
+          );
+
+          await db
+            .update(analyses)
+            .set({ marketScope: escalation.scope, marketNote: escalation.message, updatedAt: new Date() })
+            .where(eq(analyses.id, analysis.id));
+        } catch (error) {
+          console.warn("[variante] recherche produit échouée", error);
+        }
+      });
+    }
 
     return NextResponse.json(outcome.payload);
   } catch (error) {

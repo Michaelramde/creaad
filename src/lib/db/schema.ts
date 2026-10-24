@@ -249,6 +249,9 @@ export const analyses = pgTable(
     productRef: text("product_ref"),
     /** Axes de variantes proposés quand l'analyse attend un choix. */
     pendingVariants: jsonb("pending_variants").$type<VariantAxis[]>(),
+    /** Provenance du marché produit : pays · zone · monde · archetype. */
+    marketScope: text("market_scope"),
+    marketNote: text("market_note"),
     manualConfirmedAt: timestamp("manual_confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

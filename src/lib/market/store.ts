@@ -115,11 +115,63 @@ export interface MatrixBuild {
 }
 
 /**
+ * Annonces rattachées à un **produit précis**, tous pays confondus.
+ *
+ * C'est la matière du marché produit : les annonces des vendeurs de ce
+ * modèle, qu'on ait dû élargir au pays, à la zone ou au monde pour les trouver.
+ */
+export async function loadAdsByProduct(productRef: string): Promise<RawAdRow[]> {
+  const rows = await db
+    .select()
+    .from(adObservations)
+    .where(eq(adObservations.productRef, productRef))
+    .limit(500);
+
+  return rows.map((row) => ({
+    id: row.id,
+    archetypeSlug: row.archetypeSlug,
+    country: row.country,
+    platform: row.platform,
+    advertiserId: row.advertiserId,
+    advertiserName: row.advertiserName,
+    hook: row.hook,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    isActive: row.isActive,
+    url: row.url,
+    collectedAt: row.collectedAt,
+  }));
+}
+
+/**
+ * Matrice de saturation d'un produit. Aucun cache à gérer : les annonces sont
+ * déjà en base, le calcul est pur et instantané.
+ */
+export async function buildMatrixForProduct(
+  productRef: string,
+  country: string,
+  options: { now?: number } = {},
+): Promise<MatrixBuild | null> {
+  const ads = await loadAdsByProduct(productRef);
+  if (ads.length === 0) return null;
+
+  const { observations, report } = ingestAds(ads, { now: options.now });
+  const matrix = buildMatrix({
+    country,
+    ads: observations,
+    referenceAds: [],
+    referenceMarkets: [],
+    now: options.now,
+  });
+
+  return { matrix, report };
+}
+
+/**
  * Construit la matrice de saturation pour un archétype et un pays,
  * à partir des seules observations stockées.
  */
-export async function buildMatrixFor(
-  archetypeSlug: string,
+export async function buildMatrixFor(  archetypeSlug: string,
   country: string,
   options: { referenceCountry?: string; now?: number } = {},
 ): Promise<MatrixBuild> {

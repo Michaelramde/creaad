@@ -12,6 +12,8 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { analyses, archetypes, creativeKits, marketKits, planImages, plans, products } from "@/lib/db/schema";
 import { ANGLE_LABELS, type AngleFamily } from "@/lib/market/types";
+import { buildPortfolio } from "@/lib/market/portfolio";
+import { buildMatrixForProduct } from "@/lib/market/store";
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
@@ -116,6 +118,25 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   let marketMeta: { adsFound: number; confidence: string } | null = null;
   let archetypeLabel: string | null = null;
 
+  /**
+   * Marché du produit d'abord : s'il a ses propres annonces, ce sont elles
+   * qui parlent — pas celles du marché générique de son type.
+   */
+  let productMarket: { adsFound: number; scope: string | null; note: string | null } | null = null;
+
+  if (row.productRef && row.status === "livree") {
+    const built = await buildMatrixForProduct(row.productRef, row.country);
+    if (built && built.matrix.dataQuality.adsFound >= 3) {
+      portfolio = buildPortfolio(built.matrix).entries as PortfolioEntry[];
+      marketMeta = { adsFound: built.matrix.dataQuality.adsFound, confidence: built.matrix.dataQuality.confidence };
+      productMarket = {
+        adsFound: built.matrix.dataQuality.adsFound,
+        scope: row.marketScope,
+        note: row.marketNote,
+      };
+    }
+  }
+
   const [product] = await db
     .select({ name: products.name })
     .from(products)
@@ -138,7 +159,9 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         .where(and(eq(marketKits.archetypeId, archetype.id), eq(marketKits.country, row.country)))
         .limit(1);
 
-      if (cache) {
+      // Le marché de l'archétype ne sert que de repli : s'il a déjà été
+      // remplacé par celui du produit, on ne l'écrase pas.
+      if (cache && !portfolio) {
         const content = cache.content as { portfolio?: { entries?: PortfolioEntry[] } };
         portfolio = content.portfolio?.entries ?? null;
         marketMeta = { adsFound: cache.adsFound, confidence: cache.confidence };
@@ -279,8 +302,18 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       )}
 
       {/* 2 · Convaincre */}
-      {portfolio && portfolio.length > 0 && (        <section className="mt-6">
-          <Kicker>Convaincre · les angles du marché ({marketMeta?.adsFound} annonces)</Kicker>
+      {portfolio && portfolio.length > 0 && (
+        <section className="mt-6">
+          <Kicker>
+            {productMarket
+              ? `Convaincre · ce produit (${productMarket.adsFound} annonces)`
+              : `Convaincre · le marché du ${archetypeLabel ?? "produit"} (${marketMeta?.adsFound} annonces)`}
+          </Kicker>
+
+          {productMarket?.note && (
+            <p className="mt-1 text-[11px] leading-relaxed text-stone-500">{productMarket.note}</p>
+          )}
+
           <div className="mt-2 space-y-2">
             {portfolio.slice(0, 6).map((entry) => (
               <Card key={entry.family}>
