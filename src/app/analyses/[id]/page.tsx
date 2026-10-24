@@ -323,9 +323,11 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
           <Kicker>Produire · tes créas</Kicker>
 
           {kit.bigIdea?.trim() ? (
-            <Card className="mt-2 bg-stone-900 text-white">
+            // Pas de `Card` ici : son fond blanc l'emporterait sur le fond
+            // sombre, et le texte blanc deviendrait invisible.
+            <div className="mt-2 rounded-2xl bg-stone-900 p-4 text-white">
               <p className="text-[15px] leading-relaxed">{kit.bigIdea}</p>
-            </Card>
+            </div>
           ) : null}          <div className="mt-2 space-y-2">
             {kit.angles.slice(0, 3).map((angle) => (
               <Card key={angle.id}>

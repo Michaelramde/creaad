@@ -27,13 +27,14 @@ await pool.query(
   [userId, `shot2-${userId}`],
 );
 
-const created = await (
-  await fetch(`${BASE}/api/analyses`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", cookie, Origin: BASE },
-    body: JSON.stringify({ country: "CI", images: [{ url: PHOTO, width: 1200, height: 1200 }] }),
-  })
-).json();
+const firstRes = await fetch(`${BASE}/api/analyses`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json", cookie, Origin: BASE },
+  body: JSON.stringify({ country: "CI", images: [{ url: PHOTO, width: 1200, height: 1200 }] }),
+});
+const firstText = await firstRes.text();
+let created;
+try { created = JSON.parse(firstText); } catch { console.log(`analyse HTTP ${firstRes.status} : ${firstText.slice(0,200)}`); process.exit(1); }
 
 const brown = (created.variants?.[0]?.values ?? []).find((v) => v.available && /brown/i.test(v.name))
   ?? (created.variants?.[0]?.values ?? []).find((v) => v.available);
