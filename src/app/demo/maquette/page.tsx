@@ -77,6 +77,7 @@ export default async function MockupPage() {
             ...(image.kind ? { kind: image.kind } : {}),
           }))}
           colours={colours}
+          exportHref={`/api/demo/export/${DEMO_PRODUCT}`}
         />
       </div>
 
@@ -157,14 +158,6 @@ export default async function MockupPage() {
           ))}
         </div>
       </details>
-
-      {/* Exporter — ce qu'il a payé, il doit pouvoir le garder */}
-      <a
-        href={`/api/demo/export/${DEMO_PRODUCT}`}
-        className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-300 py-3 text-sm font-medium text-stone-800"
-      >
-        ⤓ Exporter le dossier (ZIP · photos + fiche)
-      </a>
 
       {/* Étape 2 */}
       <Card className="mt-5">

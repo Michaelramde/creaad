@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { ConfirmArticle } from "@/components/confirm-article";
 import { CopyButton } from "@/components/copy-button";
 import { MarketStepButton } from "@/components/market-step-button";
+import { ProductGallery } from "@/components/product-gallery";
 import { SafeImage } from "@/components/safe-image";
 import { VariantPicker } from "@/components/variant-picker";
 import { Badge, Card, Kicker, type Tone } from "@/components/ui";
@@ -15,6 +16,7 @@ import { analyses, archetypes, creativeKits, marketKits, planImages, plans, prod
 import { ANGLE_LABELS, type AngleFamily } from "@/lib/market/types";
 import { buildPortfolio } from "@/lib/market/portfolio";
 import { buildMatrixForProduct } from "@/lib/market/store";
+import type { PoolImage } from "@/lib/products/types";
 import { getFreshRecord } from "@/lib/products/records";
 
 interface StoredEnrichment {
@@ -145,21 +147,43 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   let productPortfolio: PortfolioEntry[] | null = null;
   let productMarket: { adsFound: number; scope: string | null; note: string | null } | null = null;
 
-  /** Toutes les photos trouvées du produit — la galerie fournisseur. */
-  let gallery: { url: string; origin: string }[] = [];
+  /** Toutes les photos trouvées du produit — galerie, description, avis. */
+  let gallery: PoolImage[] = [];
   let variantImages: string[] = [];
 
   const productRecord = row.productRef ? await getFreshRecord("aliexpress", row.productRef) : null;
 
   if (productRecord) {
-    // Toutes les vues : galerie, description A+, variantes, photos d'avis.
-    gallery = productRecord.images
-      .filter((image) => image.origin !== "variant")
-      .map((image) => ({ url: image.url, origin: image.origin }));
+    gallery = productRecord.images.filter((image) => image.origin !== "variant");
     variantImages = productRecord.variantAxes.flatMap((axis) =>
       axis.values.map((value) => value.image).filter((url): url is string => Boolean(url)),
     );
   }
+
+  /** Un axe n'est proposé que s'il porte des images : sinon il ne se choisit pas. */
+  const colourAxis = productRecord?.variantAxes.find((axis) =>
+    axis.values.some((value) => value.image),
+  );
+  const variantColours = (colourAxis?.values ?? [])
+    .filter((value) => value.image)
+    .map((value) => ({ valueId: value.valueId, name: value.name, image: value.image as string }));
+
+  /* ── Dimensions et spécifications, avec leur portée ───────────────────── */
+  const dims = productRecord?.facts.lengthWidthHeightMm?.value;
+  const weight = productRecord?.facts.weightG?.value;
+  const dimensionLabel = Array.isArray(dims)
+    ? `${(dims as number[]).map((mm) => mm / 10).join(" × ")} cm`
+    : null;
+  const weightLabel = typeof weight === "number" ? `${weight} g` : null;
+  const specEntries = Object.entries((productRecord?.specs ?? {}) as Record<string, string>);
+  const reviewAverage =
+    productRecord && productRecord.reviews.length > 0
+      ? Math.round(
+          (productRecord.reviews.reduce((total, review) => total + review.rating, 0) /
+            productRecord.reviews.length) *
+            10,
+        ) / 10
+      : null;
 
   if (row.productRef && row.status === "livree") {
     const built = await buildMatrixForProduct(row.productRef, row.country);
@@ -306,60 +330,103 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         />
       )}
 
-      {/* Toutes les photos trouvées du produit */}
-      {gallery.length > 1 && (
-        <section className="mt-4">
-          <Kicker>Les photos du produit ({gallery.length})</Kicker>
-          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-            {gallery.map((image) => (
-              <a
-                key={image.url}
-                href={image.url}
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0"
-              >
-                <SafeImage
-                  src={image.url}
-                  className="h-24 w-24 rounded-xl border border-stone-200 object-cover"
-                />
-              </a>
-            ))}
-          </div>
+      {/* 1 · Le dossier produit — le bénéfice de l'étape 1 */}
+      {gallery.length > 0 && (
+        <section className="mt-5">
+          <ProductGallery
+            images={gallery.map((image) => ({
+              url: image.url,
+              ...(image.kind ? { kind: image.kind } : {}),
+              ...(image.variantValueId ? { variantValueId: image.variantValueId } : {}),
+            }))}
+            colours={variantColours}
+            initialSelected={row.selectedVariants ?? undefined}
+            analysisId={row.id}
+            exportHref={`/api/analyses/${row.id}/export`}
+          />
         </section>
       )}
 
-      {/* 1 · Montrer */}
-      {plan && (
-        <Card className="mt-4">
-          <Kicker>Montrer · ta planche</Kicker>
-          <div className="mt-1 flex items-end justify-between">
-            <div>
-              <p className="text-3xl font-semibold tabular-nums">{plan.fidelityScore}</p>
-              <p className="text-xs text-stone-500">Fidélité / 100</p>
+      {/* Ce qu'il mesure — replié, résumé visible */}
+      <details className="mt-3 rounded-2xl border border-stone-200 bg-white">
+        <summary className="flex cursor-pointer items-center justify-between px-4 py-3">
+          <span className="text-sm font-medium">Ce qu&apos;il mesure</span>
+          <span className="text-[11px] text-stone-500">
+            {dimensionLabel ?? "non communiqué"}
+            {weightLabel ? ` · ${weightLabel}` : ""}
+          </span>
+        </summary>
+        <div className="border-t border-stone-100 px-4 py-3">
+          <dl className="space-y-1.5 text-xs">
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-500">Article</dt>
+              <dd className="font-medium">{dimensionLabel ?? "non communiqué"}</dd>
             </div>
-            <Badge tone={plan.gatePassed ? "ok" : "warn"}>
-              {plan.gatePassed ? "Validée" : "À compléter"}
-            </Badge>
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-500">Poids</dt>
+              <dd className="font-medium">{weightLabel ?? "non communiqué"}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-500">Emballage</dt>
+              <dd className="text-stone-400">non communiqué</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-stone-500">Carton</dt>
+              <dd className="text-stone-400">non communiqué</dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-[10px] text-stone-400">
+            Source : tableau de mesures de la fiche, lu par OCR.
+          </p>
+        </div>
+      </details>
+
+      {/* Fiche technique */}
+      {specEntries.length > 0 && (
+        <details className="mt-2 rounded-2xl border border-stone-200 bg-white">
+          <summary className="flex cursor-pointer items-center justify-between px-4 py-3">
+            <span className="text-sm font-medium">Fiche technique</span>
+            <span className="text-[11px] text-stone-500">{specEntries.length} champs</span>
+          </summary>
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-stone-100 px-4 py-3 text-[11px]">
+            {specEntries.map(([key, value]) => (
+              <div key={key} className="contents">
+                <dt className="truncate text-stone-500">{key}</dt>
+                <dd className="truncate font-medium" title={value}>
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
+
+      {/* Avis clients */}
+      {productRecord && productRecord.reviews.length > 0 && (
+        <details className="mt-2 rounded-2xl border border-stone-200 bg-white">
+          <summary className="flex cursor-pointer items-center justify-between px-4 py-3">
+            <span className="text-sm font-medium">Ce que disent les acheteurs</span>
+            <span className="text-[11px] text-stone-500">
+              {reviewAverage}/5 · {productRecord.reviews.length} avis
+            </span>
+          </summary>
+          <div className="space-y-3 border-t border-stone-100 px-4 py-3">
+            {productRecord.reviews.slice(0, 4).map((review) => (
+              <div key={review.reviewId}>
+                <p className="text-[11px] text-amber-600">
+                  {"★".repeat(review.rating)}
+                  <span className="text-stone-300">{"★".repeat(5 - review.rating)}</span>
+                </p>
+                <p className="mt-0.5 text-xs leading-relaxed text-stone-700">
+                  « {review.text.slice(0, 200)} »
+                </p>
+                <p className="mt-0.5 text-[10px] text-stone-400">
+                  {[review.buyerCountry, review.date].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+            ))}
           </div>
-
-          {images.length > 0 && (
-            <div className={`mt-3 grid gap-2 ${images.length < 3 ? "grid-cols-2" : "grid-cols-3"}`}>
-              {images.map((image) => (
-                <figure key={image.id} className="overflow-hidden rounded-xl border border-stone-200">
-                  <SafeImage src={image.url} alt={image.slot} className="aspect-square w-full object-cover" />
-                  <figcaption className="px-1.5 py-1 text-[10px] text-stone-500">
-                    {image.slot.replace("-", " ")}
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
-          )}
-
-          {plan.qualityNote && (
-            <p className="mt-3 text-xs leading-relaxed text-amber-800">{plan.qualityNote}</p>
-          )}
-        </Card>
+        </details>
       )}
 
       {/* 2a · Convaincre — le produit */}

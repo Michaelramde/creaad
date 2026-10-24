@@ -255,6 +255,8 @@ export const analyses = pgTable(
     archetypeSlug: text("archetype_slug"),
     /** Produit fournisseur identifié, pour ne pas le recalculer à la reprise. */
     productRef: text("product_ref"),
+    /** Coloris retenus par le commerçant — pilote la galerie et l'export. */
+    selectedVariants: jsonb("selected_variants").$type<string[]>(),
     /** Axes de variantes proposés quand l'analyse attend un choix. */
     pendingVariants: jsonb("pending_variants").$type<VariantAxis[]>(),
     /** Provenance du marché produit : pays · zone · monde · archetype. */

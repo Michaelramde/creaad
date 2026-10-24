@@ -37,27 +37,36 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 /**
- * La galerie — le bénéfice principal de l'étape 1.
+ * La galerie — le benefice principal de l'etape 1.
  *
- * Deux gestes distincts, volontairement séparés pour qu'ils se comprennent :
+ * Deux gestes distincts, pour qu'ils se comprennent :
+ *   1. « Quels coloris vends-tu ? » — une decision, enregistree, qui pilote
+ *      la galerie ET le contenu de l'export.
+ *   2. « Toutes les photos » — une consultation, par nature d'image.
  *
- *   1. « Quels coloris vends-tu ? » — une décision, avec des cases à cocher.
- *   2. « Toutes les photos » — une consultation, avec des onglets par nature.
- *
- * Les images de mesures portent les dimensions : elles restent visibles quel
- * que soit le coloris choisi.
+ * Les images sans coloris (mesures, marketing, sans produit) restent toujours
+ * incluses : c'est d'elles que viennent les dimensions.
  */
 export function ProductGallery({
   images,
   colours,
+  initialSelected,
+  analysisId,
+  exportHref,
 }: {
   images: GalleryImage[];
   colours: GalleryColour[];
+  initialSelected?: string[];
+  analysisId?: string;
+  exportHref?: string;
 }) {
-  const [sold, setSold] = useState<string[]>(colours.map((colour) => colour.valueId));
+  const [sold, setSold] = useState<string[]>(
+    initialSelected ?? colours.map((colour) => colour.valueId),
+  );
   const [tab, setTab] = useState<Tab>("tout");
   const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
@@ -67,26 +76,37 @@ export function ProductGallery({
     return map;
   }, [images]);
 
+  const kept = useMemo(
+    () => images.filter((image) => !image.variantValueId || sold.includes(image.variantValueId)),
+    [images, sold],
+  );
+
   const visible = useMemo(() => {
-    const kept = images.filter(
-      (image) => !image.variantValueId || sold.includes(image.variantValueId),
-    );
     if (tab === "tout") return kept;
     if (tab === "autre") return kept.filter((image) => image.kind === "sans_produit");
     return kept.filter((image) => image.kind === tab);
-  }, [images, sold, tab]);
+  }, [kept, tab]);
 
   const tabCount = (id: Tab) => {
-    const kept = images.filter((image) => !image.variantValueId || sold.includes(image.variantValueId));
     if (id === "tout") return kept.length;
     if (id === "autre") return kept.filter((image) => image.kind === "sans_produit").length;
     return kept.filter((image) => image.kind === id).length;
   };
 
   function toggle(valueId: string) {
-    setSold((prev) =>
-      prev.includes(valueId) ? prev.filter((id) => id !== valueId) : [...prev, valueId],
-    );
+    const next = sold.includes(valueId) ? sold.filter((id) => id !== valueId) : [...sold, valueId];
+    setSold(next);
+
+    if (analysisId) {
+      setSaving(true);
+      void fetch(`/api/analyses/${analysisId}/coloris`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selected: next }),
+      })
+        .catch(() => undefined)
+        .finally(() => setSaving(false));
+    }
   }
 
   const selection = (
@@ -117,7 +137,9 @@ export function ProductGallery({
                 />
               )}
               <span className="text-left">
-                <span className="block text-[11px] font-medium leading-tight">{colour.name.replace(/^\d+\s*/, "")}</span>
+                <span className="block text-[11px] font-medium leading-tight">
+                  {colour.name.replace(/^\d+\s*/, "")}
+                </span>
                 <span className="block text-[10px] leading-tight text-stone-500">
                   {counts[colour.valueId] ?? 0} photo{(counts[colour.valueId] ?? 0) > 1 ? "s" : ""}
                 </span>
@@ -134,7 +156,9 @@ export function ProductGallery({
         })}
       </div>
       <p className="mt-1.5 text-[10px] text-stone-500">
-        Les images de mesures et les visuels sans produit restent toujours affichés.
+        {saving
+          ? "Enregistrement…"
+          : "Les images de mesures et les visuels sans produit restent toujours inclus."}
       </p>
     </section>
   );
@@ -159,6 +183,16 @@ export function ProductGallery({
       })}
     </div>
   );
+
+  const exporter = exportHref ? (
+    <a
+      href={`${exportHref}${sold.length < colours.length ? `?coloris=${sold.join(",")}` : ""}`}
+      className="mt-2 flex w-full items-center justify-between rounded-xl border border-stone-300 px-3 py-2.5 text-xs font-medium text-stone-800"
+    >
+      <span>⤓ Exporter · {kept.length} photos + fiche</span>
+      <span className="text-[10px] font-normal text-stone-500">ZIP</span>
+    </a>
+  ) : null;
 
   return (
     <div className="space-y-4">
@@ -197,6 +231,8 @@ export function ProductGallery({
             Voir les {visible.length} photos →
           </button>
         )}
+
+        {exporter}
       </section>
 
       {expanded && (
@@ -204,7 +240,11 @@ export function ProductGallery({
           <div className="mx-auto max-w-md px-4 py-4">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold">Toutes les photos</p>
-              <button type="button" onClick={() => setExpanded(false)} className="text-xs text-stone-500">
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                className="text-xs text-stone-500"
+              >
                 Fermer ✕
               </button>
             </div>
@@ -214,7 +254,12 @@ export function ProductGallery({
 
             <div className="mt-3 grid grid-cols-3 gap-1.5 pb-10">
               {visible.map((image, index) => (
-                <Tile key={image.url} image={image} colours={colours} onClick={() => setOpen(index)} />
+                <Tile
+                  key={image.url}
+                  image={image}
+                  colours={colours}
+                  onClick={() => setOpen(index)}
+                />
               ))}
             </div>
           </div>
