@@ -9,6 +9,9 @@
 /** Provenance d'un visuel — l'ordre de confiance est donné par `IMAGE_RANK`. */
 export type ImageOrigin = "variant" | "gallery" | "review" | "supplier";
 
+/** Nature d'une image. Voir `PoolImage.kind`. */
+export type ImageKind = "packshot" | "scene" | "spec" | "sans_produit";
+
 export const IMAGE_RANK: Record<ImageOrigin, number> = {
   variant: 0,
   gallery: 1,
@@ -24,11 +27,15 @@ export interface PoolImage {
   /** Coloris représenté, quand il a pu être identifié. */
   variantValueId?: string;
   /**
-   * `technique` = tableau de mesures, schéma, dimensions : ces images ne
-   * montrent pas le produit sous un angle, mais elles portent des faits.
-   * Elles restent affichées quel que soit le coloris choisi.
+   * Nature de l'image — quatre cas, car ils ne servent pas à la même chose :
+   *   packshot     produit seul, fond neutre → sert à détourer
+   *   scene        produit porté ou en situation → donne l'échelle
+   *   spec         produit + tableau de mesures → porte les dimensions
+   *   sans_produit logo, bannière, texte seul → aucun produit
    */
-  kind?: "produit" | "technique";
+  kind?: ImageKind;
+  /** L'image porte-t-elle du texte technique (mesures, tableau) ? */
+  technicalText?: boolean;
 }
 
 export interface VariantValue {
