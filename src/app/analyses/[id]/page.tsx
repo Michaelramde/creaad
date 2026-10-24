@@ -9,6 +9,7 @@ import { Badge, Card, Kicker, type Tone } from "@/components/ui";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { analyses, archetypes, creativeKits, marketKits, planImages, plans, products } from "@/lib/db/schema";
+import { ANGLE_LABELS, type AngleFamily } from "@/lib/market/types";
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
@@ -253,8 +254,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             {portfolio.slice(0, 6).map((entry) => (
               <Card key={entry.family}>
                 <div className="flex items-start justify-between gap-2">
-                  <h2 className="text-sm font-semibold capitalize">
-                    {entry.family.replace(/-/g, " ")}
+                  <h2 className="text-sm font-semibold">
+                    {ANGLE_LABELS[entry.family as AngleFamily] ?? entry.family}
                   </h2>
                   <Badge tone={ACTION_TONE[entry.action] ?? "muted"}>
                     {ACTION_LABEL[entry.action] ?? entry.action}
@@ -312,7 +313,9 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
                   </div>
                 </dl>
                 <div className="mt-2">
-                  <Badge tone="muted">angle : {angle.sourceAngleRef}</Badge>
+                  <Badge tone="muted">
+                    angle : {ANGLE_LABELS[angle.sourceAngleRef as AngleFamily] ?? angle.sourceAngleRef}
+                  </Badge>
                 </div>
               </Card>
             ))}
@@ -506,7 +509,7 @@ function buildExport(
     lines.push("## Angles observés sur le marché");
     for (const entry of portfolio.slice(0, 6)) {
       lines.push(
-        `- ${entry.family} — ${entry.action} (${entry.figures.advertisers} annonceurs, ${Math.round(entry.figures.medianDaysRunning)} j)`,
+        `- ${ANGLE_LABELS[entry.family as AngleFamily] ?? entry.family} — ${entry.action} (${entry.figures.advertisers} annonceurs, ${Math.round(entry.figures.medianDaysRunning)} j)`,
       );
     }
   }

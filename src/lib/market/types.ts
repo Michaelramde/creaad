@@ -109,3 +109,20 @@ export const ANGLE_FAMILIES: AngleFamily[] = [
   "nouveaute",
   "non-classe",
 ];
+
+/** Libellés affichés — les slugs ne sont pas lisibles par un commerçant. */
+export const ANGLE_LABELS: Record<AngleFamily, string> = {
+  "preuve-sociale": "Preuve sociale",
+  "avant-apres": "Avant / après",
+  "probleme-solution": "Problème / solution",
+  "prix-offre": "Prix / offre",
+  autorite: "Autorité",
+  urgence: "Urgence",
+  demonstration: "Démonstration",
+  temoignage: "Témoignage",
+  identite: "Identité",
+  comparaison: "Comparaison",
+  garantie: "Garantie",
+  nouveaute: "Nouveauté",
+  "non-classe": "Non classé",
+};
