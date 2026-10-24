@@ -38,6 +38,12 @@ const created = await (
   })
 ).json();
 
+if (!created.variants) {
+  console.log(`analyse refusée : ${created.status ?? created.error} — ${created.message ?? ""}`);
+  await pool.end();
+  process.exit(1);
+}
+
 const axis = created.variants?.[0];
 const chosen = (axis?.values ?? []).filter((v) => v.available).slice(0, 2);
 

@@ -14,6 +14,17 @@ Application web mobile-first qui transforme les photos d'un produit en **trois k
 
 ---
 
+## Deux étapes, deux demandes, 1 crédit chacune
+
+| Étape | Contenu | Coût |
+|---|---|---|
+| **1 · Le produit** | ~37 images (galerie + description A+ + avis), spécifications, dimensions mesurées, coloris, faits corroborés, avis clients | **1 000 FCFA** |
+| **2 · Le marché** | concurrents et leurs annonces, désirs de masse, objections (avis ≤ 3 ★ + annonces), angles, espace blanc, risques Meta, kit production | **1 000 FCFA** |
+
+L'étape 1 se suffit à elle-même : le dossier produit est livré et consultable seul. L'étape 2 est un bouton explicite — on ne dépense jamais le second crédit par surprise.
+
+---
+
 ## Comment ça marche
 
 ```
@@ -85,10 +96,10 @@ npm run dev
 | Étape | Résultat |
 |---|---|
 | Inscription → session → accès wallet | ✅ sans vérification email |
-| Analyse via l'API | ✅ HTTP 200 en 16-35 s |
-| Identification | ✅ **85/100** — visuel 40/40, texte 25/25, attributs 20/20 |
-| Planche | ✅ construite ; refusée à 45/100 faute de vues « trois-quarts » et « dos » |
-| Page de résultat | ✅ rendue, section « Montrer » présente |
+| Étape 1 · dossier produit | ✅ `produit_pret` en 31 s · planche 74/100 · **1 crédit** |
+| Étape 2 · étude de marché | ✅ `livree` en 3 s · 45 annonces · **1 crédit** |
+| Enrichissement (after) | ✅ 4 concurrents · 3 désirs · 2 objections · créas |
+| Fiche produit | ✅ **37 images** (dont 24 de description) · 4 avis · dimensions 18×7×32 cm |
 
 **En local, avec fournisseurs déterministes :** planche 80/100 validée → 50 annonces de marché → kit production rédigé → **livraison complète**.
 
