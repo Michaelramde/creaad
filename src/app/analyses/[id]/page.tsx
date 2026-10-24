@@ -16,6 +16,20 @@ import { buildPortfolio } from "@/lib/market/portfolio";
 import { buildMatrixForProduct } from "@/lib/market/store";
 import { getFreshRecord } from "@/lib/products/records";
 
+interface StoredEnrichment {
+  competitors?: {
+    name: string;
+    url: string;
+    adsCount: number;
+    longestRunDays: number;
+    hooks: { hook: string; daysRunning: number; url: string }[];
+  }[];
+  desires?: { level: number; statement: string; evidence: string[] }[];
+  objections?: { objection: string; counterAngle: string; evidence: string[] }[];
+  personas?: { name: string; profile: string; verbatims: { quote: string; sourceUrl: string }[] }[];
+  riskFlags?: { type: string; severity: string; note: string }[];
+}
+
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
   variante_a_choisir: { label: "Coloris à choisir", tone: "info" },
@@ -82,6 +96,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   const status = STATUS[row.status] ?? { label: row.status, tone: "muted" as Tone };
   const match = (row.matchResult ?? null) as StoredMatch | null;
   const photos = (row.photos ?? []).map((p) => p.url);
+
+  const enrichment = (row.marketEnrichment ?? null) as StoredEnrichment | null;
 
   const [plan] = await db
     .select()
@@ -375,6 +391,77 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         produit, pas de celui du commerçant. Il reste calculé et stocké — il
         alimente le kit production et sert de repli.
       */}
+
+      {/* 2b · Les vendeurs de ce produit */}
+      {enrichment?.competitors && enrichment.competitors.length > 0 && (
+        <section className="mt-6">
+          <Kicker>Qui vend ce produit ({enrichment.competitors.length})</Kicker>
+          <div className="mt-2 space-y-2">
+            {enrichment.competitors.slice(0, 5).map((competitor) => (
+              <Card key={competitor.url}>
+                <div className="flex items-start justify-between gap-2">
+                  <h2 className="text-sm font-semibold">{competitor.name}</h2>
+                  <Badge tone="muted">
+                    {competitor.adsCount} annonce{competitor.adsCount > 1 ? "s" : ""}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-[11px] text-stone-500">
+                  Plus longue diffusion : {competitor.longestRunDays} jours
+                </p>
+                {competitor.hooks[0] && (
+                  <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-stone-700">
+                    « {competitor.hooks[0].hook} »
+                  </p>
+                )}
+                <a
+                  href={competitor.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 inline-block text-[11px] text-stone-500 underline"
+                >
+                  Voir son annonce
+                </a>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 2c · Désirs et objections */}
+      {(enrichment?.desires?.length || enrichment?.objections?.length) && (
+        <section className="mt-6">
+          <Kicker>Ce que veulent les acheteurs</Kicker>
+          <div className="mt-2 space-y-2">
+            {(enrichment?.desires ?? []).map((desire) => (
+              <Card key={desire.statement}>
+                <div className="flex items-start gap-2">
+                  <Badge tone="info">niveau {desire.level}</Badge>
+                  <p className="text-xs leading-relaxed text-stone-700">{desire.statement}</p>
+                </div>
+                <p className="mt-1 text-[10px] text-stone-400">
+                  {desire.evidence.length} annonce{desire.evidence.length > 1 ? "s" : ""} à l&apos;appui
+                </p>
+              </Card>
+            ))}
+          </div>
+
+          {(enrichment?.objections ?? []).length > 0 && (
+            <>
+              <Kicker>Ce qui bloque l&apos;achat</Kicker>
+              <div className="mt-2 space-y-2">
+                {(enrichment?.objections ?? []).map((objection) => (
+                  <Card key={objection.objection}>
+                    <p className="text-sm font-medium">{objection.objection}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-stone-600">
+                      Contre-angle : {objection.counterAngle}
+                    </p>
+                  </Card>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {/* 3 · Produire */}
       {identified && (!portfolio || portfolio.length === 0) && (

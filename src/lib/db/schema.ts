@@ -252,6 +252,8 @@ export const analyses = pgTable(
     /** Provenance du marché produit : pays · zone · monde · archetype. */
     marketScope: text("market_scope"),
     marketNote: text("market_note"),
+    /** Concurrents, désirs, objections, personas, risques — kit « Convaincre ». */
+    marketEnrichment: jsonb("market_enrichment").$type<Record<string, unknown>>(),
     manualConfirmedAt: timestamp("manual_confirmed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

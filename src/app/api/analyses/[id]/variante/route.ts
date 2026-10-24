@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { analyses } from "@/lib/db/schema";
+import { adObservations, analyses } from "@/lib/db/schema";
+import { enrichMarket } from "@/lib/market/enrich";
 import { findProductAds } from "@/lib/market/product-market";
 import { verifyProductAds } from "@/lib/market/verify-ads";
 import { env } from "@/lib/env";
@@ -155,6 +156,46 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 .update(analyses)
                 .set({
                   marketNote: `${escalation.message} ${verified.confirmed}/${verified.checked} visuels confirment le produit.`,
+                  updatedAt: new Date(),
+                })
+                .where(eq(analyses.id, analysis.id));
+            }
+          }
+
+          /**
+           * Kit « Convaincre » complet : concurrents, désirs, objections.
+           * Les concurrents se calculent ; le reste exige un modèle, avec
+           * obligation de citer une annonce réelle.
+           */
+          if (escalation.ads > 0) {
+            const rows = await db
+              .select({
+                advertiserId: adObservations.advertiserId,
+                advertiserName: adObservations.advertiserName,
+                hook: adObservations.hook,
+                startDate: adObservations.startDate,
+                url: adObservations.url,
+                isActive: adObservations.isActive,
+              })
+              .from(adObservations)
+              .where(eq(adObservations.productRef, record.productId))
+              .limit(100);
+
+            const { enrichment } = await enrichMarket({
+              writer: providers.writer,
+              ads: rows.map((row) => ({ ...row, hook: row.hook ?? "" })),
+              product: {
+                title: record.title,
+                category: "produit",
+                country: analysis.country,
+              },
+            });
+
+            if (enrichment) {
+              await db
+                .update(analyses)
+                .set({
+                  marketEnrichment: enrichment as unknown as Record<string, unknown>,
                   updatedAt: new Date(),
                 })
                 .where(eq(analyses.id, analysis.id));
