@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import type { Facts, PoolImage, ProductVariant, VariantAxis } from "../products/types.ts";
+import type { Facts, PoolImage, ProductReview, ProductVariant, VariantAxis } from "../products/types.ts";
 import {
   boolean,
   check,
@@ -131,6 +131,10 @@ export const productRecords = pgTable(
     facts: jsonb("facts").$type<Facts>().notNull().default({}),
     images: jsonb("images").$type<PoolImage[]>().notNull().default([]),
     seller: jsonb("seller").$type<Record<string, unknown>>(),
+    /** Description A+ : images détaillées et tableaux de mesures. */
+    descriptionUrl: text("description_url"),
+    /** Avis clients — matière des désirs et objections de l'étape 2. */
+    reviews: jsonb("reviews").$type<ProductReview[]>().notNull().default([]),
     /** Marché rattaché au produit : le routage n'est fait qu'une fois. */
     archetypeSlug: text("archetype_slug"),
     archetypeSource: text("archetype_source"),
@@ -224,6 +228,7 @@ export const analyses = pgTable(
         | "appariement"
         | "bloquee_article"
         | "variante_a_choisir"
+        | "produit_pret"
         | "moisson"
         | "planche_prete"
         | "en_attente_validation"
@@ -239,6 +244,9 @@ export const analyses = pgTable(
     reservedXof: integer("reserved_xof").notNull().default(0),
     /** Coût réel réglé à la livraison (XOF). */
     settledXof: integer("settled_xof").notNull().default(0),
+    /** Étape 2 — le marché — facturée séparément. */
+    step2ReservedXof: integer("step2_reserved_xof").notNull().default(0),
+    step2SettledXof: integer("step2_settled_xof").notNull().default(0),
     failureCode: text("failure_code"),
     /** Décision d'appariement — conservée pour l'audit (J1). */
     matchScore: integer("match_score"),
@@ -264,8 +272,8 @@ export const analyses = pgTable(
     check(
       "ck_analysis_states",
       sql`${t.status} IN ('creee','reservee','capture','ocr','appariement','bloquee_article',
-        'variante_a_choisir','moisson','planche_prete','en_attente_validation','recherche_marche',
-        'marche_pret','production','livree','echouee')`,
+        'variante_a_choisir','produit_pret','moisson','planche_prete','en_attente_validation',
+        'recherche_marche','marche_pret','production','livree','echouee')`,
     ),
   ],
 );

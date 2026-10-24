@@ -150,7 +150,10 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   const productRecord = row.productRef ? await getFreshRecord("aliexpress", row.productRef) : null;
 
   if (productRecord) {
-    gallery = productRecord.gallery.map((image) => ({ url: image.url, origin: image.origin }));
+    // Toutes les vues : galerie, description A+, variantes, photos d'avis.
+    gallery = productRecord.images
+      .filter((image) => image.origin !== "variant")
+      .map((image) => ({ url: image.url, origin: image.origin }));
     variantImages = productRecord.variantAxes.flatMap((axis) =>
       axis.values.map((value) => value.image).filter((url): url is string => Boolean(url)),
     );

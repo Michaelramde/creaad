@@ -30,15 +30,26 @@ async function readGalleryText(
   record: ProductRecord,
   warnings: string[],
 ): Promise<RawFacts> {
-  if (!pipeline.ocr || record.gallery.length === 0) return {};
+  if (!pipeline.ocr || record.images.length === 0) return {};
 
-  const urls = record.gallery.slice(0, 4).map((image) => image.url);
+  /**
+   * On lit en priorité les images de **description** : c'est là que se trouvent
+   * les tableaux de mesures, jamais dans les 6 packshots de galerie. On prend
+   * aussi les photos d'avis, qui montrent le produit en situation réelle.
+   */
+  const candidates = [...record.images]
+    .sort((a, b) => {
+      const rank = { variant: 2, gallery: 0, review: 1, supplier: 3 } as const;
+      return rank[a.origin] - rank[b.origin];
+    })
+    .slice(0, 6)
+    .map((image) => image.url);
 
   try {
     const texts = pipeline.ocr.extractMany
-      ? (await pipeline.ocr.extractMany(urls)).map((result) => result.text)
+      ? (await pipeline.ocr.extractMany(candidates)).map((result) => result.text)
       : await Promise.all(
-          urls.map(async (url) => {
+          candidates.map(async (url) => {
             try {
               return (await pipeline.ocr!.extract(url)).text;
             } catch {
@@ -164,7 +175,7 @@ export async function identifyProduct(
   const enriched: ProductRecord = {
     ...record,
     facts,
-    images: buildImagePool({ gallery: record.gallery, variantImages }),
+    images: record.images,
   };
 
   if (!detail.cached) await upsertRecord(enriched);

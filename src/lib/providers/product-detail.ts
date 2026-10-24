@@ -7,12 +7,68 @@
 import type { ApifyClient } from "./apify.ts";
 import {
   buildImagePool,
+  extractDescriptionImages,
   normalizeGallery,
+  normalizeReviews,
   normalizeSpecs,
   normalizeVariants,
+  reviewImages,
 } from "../products/normalize.ts";
 import { getFreshRecord, upsertRecord } from "../products/records.ts";
-import type { ProductRecord } from "../products/types.ts";
+import type { PoolImage, ProductRecord } from "../products/types.ts";
+
+/**
+ * Télécharge la description A+ et en extrait les images.
+ *
+ * Gratuit, mais faillible : une description indisponible ne doit jamais faire
+ * échouer la fiche — on repart simplement avec les 6 images de galerie.
+ */
+async function fetchDescriptionImages(url: string): Promise<PoolImage[]> {
+  // Deux tentatives : une description perdue, ce sont 20 images en moins.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "Accept-Language": "fr-FR,fr;q=0.9",
+        },
+        signal: AbortSignal.timeout(20_000),
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        console.warn(`[product-detail] description HTTP ${res.status} (essai ${attempt + 1})`);
+        continue;
+      }
+
+      const html = await res.text();
+      const images = extractDescriptionImages(html);
+      if (images.length === 0) {
+        console.warn(`[product-detail] description sans image (${html.length} octets)`);
+        continue;
+      }
+      return images;
+    } catch (error) {
+      console.warn(`[product-detail] description échouée : ${(error as Error).message}`);
+    }
+  }
+
+  return [];
+}
+
+interface RawReview {
+  reviewId?: string;
+  rating?: number;
+  text?: string;
+  textOriginal?: string;
+  date?: string;
+  buyerCountry?: string;
+  images?: string[];
+  wouldBuyAgain?: boolean;
+  daysAfterPurchase?: number;
+  skuInfo?: string;
+}
 
 interface RawDetail {
   productId?: string;
@@ -30,6 +86,8 @@ interface RawDetail {
   variants?: unknown;
   specifications?: unknown;
   seller?: Record<string, unknown>;
+  descriptionUrl?: string;
+  reviews?: RawReview[];
 }
 
 export interface DetailOutcome {
@@ -57,7 +115,9 @@ export class ApifyProductDetail {
 
     const run = await this.client.run<RawDetail>(
       this.actorId,
-      { startUrls: [{ url: input.url }] },
+      // Les avis viennent du même appel : désirs et objections sans surcoût
+      // de collecte. `maxReviews` borne la dépense (≈0,0015 $/avis).
+      { startUrls: [{ url: input.url }], includeReviews: true, maxReviews: 30 },
       { step: "product-detail", ...(options.analysisId ? { analysisId: options.analysisId } : {}) },
     );
 
@@ -66,6 +126,21 @@ export class ApifyProductDetail {
 
     const gallery = normalizeGallery(raw.gallery);
     const { axes, variants } = normalizeVariants(raw.variantOptions, raw.variants);
+
+    const reviews = normalizeReviews(raw.reviews);
+
+    /**
+     * La description A+ contient bien plus d'images que la galerie : c'est là
+     * que se trouvent les détails, les tableaux de mesures et l'usage réel.
+     * Récupération gratuite, en HTTP simple.
+     */
+    const descriptionImages = raw.descriptionUrl
+      ? await fetchDescriptionImages(raw.descriptionUrl)
+      : [];
+
+    console.log(
+      `[product-detail] descriptionUrl=${raw.descriptionUrl ? "oui" : "non"} · images description=${descriptionImages.length}`,
+    );
 
     const variantImages = axes.flatMap((axis) =>
       axis.values.map((value) => value.image).filter((url): url is string => Boolean(url)),
@@ -88,7 +163,13 @@ export class ApifyProductDetail {
       variants,
       specs: normalizeSpecs(raw.specifications),
       facts: {},
-      images: buildImagePool({ gallery, variantImages }),
+      images: buildImagePool({
+        gallery: [...gallery, ...descriptionImages],
+        variantImages,
+        reviewImages: reviewImages(reviews),
+      }),
+      ...(raw.descriptionUrl ? { descriptionUrl: raw.descriptionUrl } : {}),
+      reviews,
       ...(raw.seller ? { seller: raw.seller } : {}),
       fetchedAt: new Date(),
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),

@@ -7,6 +7,7 @@
  */
 import type {
   PoolImage,
+  ProductReview,
   ProductVariant,
   VariantAxis,
   VariantValue,
@@ -29,6 +30,70 @@ export interface RawVariant {
 export interface RawSpec {
   name?: string;
   value?: string;
+}
+
+/**
+ * Images de la description A+ — le gisement caché.
+ *
+ * La fiche AliExpress expose 6 images de galerie, mais la description en
+ * contient souvent 20 à 30 : détails, tableaux de mesures, usage. Mesuré sur
+ * le sac de test : **24 images** contre 6.
+ */
+export function extractDescriptionImages(html: string): PoolImage[] {
+  const found = [...html.matchAll(/https?:\/\/[^"')\s]+?\.(?:jpg|jpeg|png|webp)/gi)]
+    .map((match) => match[0].replace(/^http:\/\//, "https://"))
+    // Les vignettes 50×50 et les GIF de suivi ne servent à rien.
+    .filter((url) => !/_(\d{1,2}x\d{1,2})\./.test(url) && !/\.gif$/i.test(url));
+
+  const images: PoolImage[] = [...new Set(found)].map((url) => ({ url, origin: "gallery" as const }));
+  return images;
+}
+
+/** Photos jointes aux avis : de vraies prises de vue, sous d'autres angles. */
+export function reviewImages(reviews: readonly ProductReview[]): string[] {
+  return reviews.flatMap((review) => review.images ?? []).filter(Boolean);
+}
+
+/** Avis clients : on ne garde que ce qui sert à comprendre l'acheteur. */
+export function normalizeReviews(raw: unknown): ProductReview[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((entry) => {
+      const review = entry as {
+        reviewId?: string;
+        rating?: number;
+        text?: string;
+        textOriginal?: string;
+        date?: string;
+        buyerCountry?: string;
+        images?: unknown;
+        wouldBuyAgain?: boolean;
+        daysAfterPurchase?: number;
+        skuInfo?: string;
+      };
+
+      const images = Array.isArray(review.images)
+        ? review.images
+            .map((img) => (typeof img === "string" ? img : (img as { url?: string })?.url))
+            .filter((url): url is string => typeof url === "string")
+        : [];
+
+      return {
+        reviewId: String(review.reviewId ?? ""),
+        rating: Math.min(5, Math.max(1, Math.round(Number(review.rating ?? 0)) || 0)),
+        text: String(review.text ?? review.textOriginal ?? "").trim().slice(0, 1200),
+        ...(review.date ? { date: review.date } : {}),
+        ...(review.buyerCountry ? { buyerCountry: review.buyerCountry } : {}),
+        images,
+        ...(review.wouldBuyAgain !== undefined ? { wouldBuyAgain: review.wouldBuyAgain } : {}),
+        ...(typeof review.daysAfterPurchase === "number"
+          ? { daysAfterPurchase: review.daysAfterPurchase }
+          : {}),
+        ...(review.skuInfo ? { skuInfo: String(review.skuInfo).slice(0, 120) } : {}),
+      } satisfies ProductReview;
+    })
+    .filter((review) => review.text.length > 0 || review.images.length > 0);
 }
 
 export function normalizeGallery(raw: unknown): PoolImage[] {

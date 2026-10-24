@@ -64,6 +64,19 @@ export interface Dimensions {
   lengthWidthHeightMm?: [number, number, number];
 }
 
+/** Un avis client — la matière première des désirs et des objections. */
+export interface ProductReview {
+  reviewId: string;
+  rating: number;
+  text: string;
+  date?: string;
+  buyerCountry?: string;
+  images: string[];
+  wouldBuyAgain?: boolean;
+  daysAfterPurchase?: number;
+  skuInfo?: string;
+}
+
 /** Ce que l'on conserve d'un produit, prêt à être réutilisé. */
 export interface ProductRecord {
   provider: string;
@@ -80,6 +93,10 @@ export interface ProductRecord {
   specs: Record<string, string>;
   facts: Facts;
   images: PoolImage[];
+  /** Description A+ : la source des 24 images détaillées et des tableaux de mesures. */
+  descriptionUrl?: string;
+  /** Avis clients, avec leurs photos et leur pays d'achat. */
+  reviews: ProductReview[];
   seller?: Record<string, unknown>;
   /** Marché auquel ce produit a été rattaché — calculé une seule fois. */
   archetypeSlug?: string;
