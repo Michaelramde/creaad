@@ -43,6 +43,8 @@ export interface SourceAdapter {
      * les plus populaires, « sac jeep 3 en 1 » ramène le bon.
      */
     query?: string;
+    /** Photo du produit — permet une recherche par ressemblance. */
+    imageUrl?: string;
   }): Promise<ListingCandidate[]>;
 }
 

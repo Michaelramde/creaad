@@ -60,6 +60,7 @@ async function searchSources(
         country: input.country,
         limit: 8,
         query: input.userText,
+        imageUrl: input.imageUrls[0],
       });
       candidates.push(...found);
     } catch (error) {

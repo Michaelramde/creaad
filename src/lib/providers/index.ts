@@ -13,6 +13,7 @@ import {
 import { GeminiAttributeProvider, GeminiOcrProvider } from "./gemini.ts";
 import { GeminiSlotClassifier, GeminiVisualComparator } from "./gemini-vision.ts";
 import { GeminiCreativeWriter } from "./gemini-writer.ts";
+import { VisualIndexSource } from "./visual-index.ts";
 import { MistralOcrProvider } from "./mistral-ocr.ts";
 import type {
   AttributeProvider,
@@ -48,10 +49,11 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
       ? new GeminiAttributeProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL)
       : new NoopAttributeProvider());
 
-  // Sources d'annonces : la première qui répond alimente l'appariement.
-  // AliExpress en HTTP ne demande ni clé ni navigateur ; l'API affiliée,
-  // si elle est configurée, prend le relais en premier (plus structurée).
+  // Ordre volontaire : la ressemblance d'abord — c'est ce qui marche quand le
+  // commerçant ne sait pas nommer son produit. La recherche textuelle complète
+  // l'index quand la photo ne donne rien.
   const defaultSources: SourceAdapter[] = [
+    ...(env.GEMINI_API_KEY ? [new VisualIndexSource(env.GEMINI_API_KEY)] : []),
     ...(env.ALIEXPRESS_APP_KEY && env.ALIEXPRESS_APP_SECRET
       ? [
           new AliExpressAdapter(

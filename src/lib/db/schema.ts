@@ -86,8 +86,28 @@ export const archetypes = pgTable(
   (t) => [uniqueIndex("ux_archetype_slug").on(t.slug)],
 );
 
-export const products = pgTable(
-  "products",
+/**
+ * Index visuel : un vecteur par produit fournisseur.
+ * Alimenté hors ligne, interrogé en cosinus à chaque analyse.
+ */
+export const productIndex = pgTable(
+  "product_index",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    archetypeSlug: text("archetype_slug").notNull(),
+    category: text("category").notNull(),
+    provider: text("provider").notNull(),
+    externalId: text("external_id").notNull(),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    imageUrl: text("image_url").notNull(),
+    embedding: jsonb("embedding").$type<number[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("product_index_provider_external_unique").on(table.provider, table.externalId)],
+);
+
+export const products = pgTable(  "products",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     userId: text("user_id")
