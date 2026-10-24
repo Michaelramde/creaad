@@ -156,7 +156,7 @@ export async function runAnalysis(
   // les angles du marché — ils portent sur l'archétype, pas sur ces photos.
   // Priver le commerçant de tout après 30 s d'attente n'a aucune raison.
   if (!plan.plan.fidelity.gatePassed) {
-    return { identify, plan, market: { matrix, portfolio }, warnings, blocked: true };
+    return { identify, ...(product ? { product } : {}), plan, market: { matrix, portfolio }, warnings, blocked: true };
   }
 
   /* ── production : angles, hooks, scripts, prompts ────────────────────── */
@@ -186,5 +186,13 @@ export async function runAnalysis(
   });
   warnings.push(...creative.warnings);
 
-  return { identify, plan, market: { matrix, portfolio }, creative, warnings, blocked: false };
+  return {
+    identify,
+    ...(product ? { product } : {}),
+    plan,
+    market: { matrix, portfolio },
+    creative,
+    warnings,
+    blocked: false,
+  };
 }
