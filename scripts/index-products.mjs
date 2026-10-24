@@ -12,9 +12,21 @@ import { Pool } from "@neondatabase/serverless";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-const env = await readFile(".env.local", "utf8");
-const dbUrl = /^DATABASE_URL="?([^"\n]+)"?/m.exec(env)?.[1];
-const key = /^GEMINI_API_KEY="?([^"\n]+)"?/m.exec(env)?.[1];
+const env = await readFile(".env.local", "utf8").catch(() => "");
+const dbUrl = process.env.DATABASE_URL ?? /^DATABASE_URL="?([^"\n]+)"?/m.exec(env)?.[1];
+const key = process.env.GEMINI_API_KEY ?? /^GEMINI_API_KEY="?([^"\n]+)"?/m.exec(env)?.[1];
+
+if (!dbUrl) {
+  console.error("DATABASE_URL absente (variable d'environnement ou .env.local).");
+  process.exit(1);
+}
+if (!key) {
+  console.error(
+    "GEMINI_API_KEY absente — l'indexation visuelle ne peut pas tourner.\n" +
+      "En local : .env.local. En CI : secret de dépôt GEMINI_API_KEY.",
+  );
+  process.exit(1);
+}
 const per = Number(process.argv.find((a) => a.startsWith("--per="))?.split("=")[1] ?? 4);
 const only = process.argv.find((a) => a.startsWith("--only="))?.split("=")[1];
 
