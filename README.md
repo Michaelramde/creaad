@@ -80,23 +80,34 @@ npm run dev
 
 ## État vérifié
 
+**En production (`creaad.site`), le 24/10 :**
+
+| Étape | Résultat |
+|---|---|
+| Inscription → session → accès wallet | ✅ sans vérification email |
+| Analyse via l'API | ✅ HTTP 200 en 16-35 s |
+| Identification | ✅ **85/100** — visuel 40/40, texte 25/25, attributs 20/20 |
+| Planche | ✅ construite ; refusée à 45/100 faute de vues « trois-quarts » et « dos » |
+| Page de résultat | ✅ rendue, section « Montrer » présente |
+
+**En local, avec fournisseurs déterministes :** planche 80/100 validée → 50 annonces de marché → kit production rédigé → **livraison complète**.
+
 | | |
 |---|---|
-| Identification réelle | **85/100** (visuel 40/40, texte 25/25, attributs 20/20) |
-| Planche, chemin complet | **72/100**, 5 vues sur 5, validée |
-| Marché | 118 annonces réelles, 4 archétypes, cache 30 j |
-| Paiement | recharge → webhook signé → crédit → kits, validé en production |
-| Tests | 116 unitaires · 16 intégration · 2 e2e |
+| Tests | 122 unitaires · 16 intégration · 2 e2e |
+| Collecte marché | 118 annonces réelles, 4 archétypes, automatique toutes les 6 h |
+| Paiement | recharge → webhook signé → crédit → kits (validé en production) |
 
 ---
 
 ## Limites connues
 
-- **Quota Gemini gratuit** : ~4 appels par analyse. Le palier gratuit s'épuise vite en développement ; les erreurs 429/503 sont réessayées puis remontées proprement (aucun débit).
-- **TikTok** : non branché. Les projets open source existants sont anciens et le Creative Center exige une signature.
-- **Verbatims clients** : les avis AliExpress ne sont pas encore extraits — seuls titre et image le sont.
+- **La livraison complète n'a pas encore été observée en production** : il faut trois vues distinctes du même produit. AliExpress n'en expose qu'une par annonce, et son classement varie selon l'IP — ce jeu de photos ne peut venir que d'un vrai commerçant.
+- **Quota Gemini gratuit** : ~4 appels par analyse, et les quotas sont **par modèle** — une chaîne de repli (`flash-lite`) prend le relais quand le principal est saturé.
+- **AliExpress** : la page *produit* est bloquée depuis les IP datacenter ; seuls les résultats de la page de *recherche* sont lisibles (titre, image, prix). C'est suffisant pour l'appariement, pas pour un enrichissement profond.
+- **Verbatims clients** : les avis ne sont pas encore extraits.
 - **Exports** : copie texte uniquement (pas de PDF/ZIP).
-- **Historique** : pas d'écran de liste ; chaque analyse a son URL.
+- **TikTok** : non branché — l'écosystème open source est trop ancien.
 
 ---
 
