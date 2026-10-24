@@ -12,8 +12,9 @@ import { eq } from "drizzle-orm";
 
 import { db } from "../db/index.ts";
 import { productIndex } from "../db/schema.ts";
-import type { ListingCandidate } from "../matching/types.ts";
-import { cosine } from "../matching/text.ts";
+import type { Attributes, ListingCandidate } from "../matching/types.ts";
+import { cosine, normalize } from "../matching/text.ts";
+import { extractColorName, extractSize, parseVariantLabel } from "../matching/variant.ts";
 import { embedImage } from "./gemini-embedding.ts";
 
 export class VisualIndexSource {
@@ -54,18 +55,36 @@ export class VisualIndexSource {
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, input.limit ?? 8);
 
-    return ranked.map(({ row, score }) => ({
-      provider: this.name,
-      externalId: row.externalId,
-      url: row.url,
-      title: row.title,
-      description: `Ressemblance visuelle : ${Math.round((score ?? 0) * 100)} %`,
-      images: [{ url: row.imageUrl }],
-      attributes: {},
-      variant: {},
-      // Le vecteur voyage avec le candidat : la comparaison visuelle devient
-      // un simple cosinus, sans appel de modèle.
-      embedding: row.embedding,
-    }));
+    return ranked.map(({ row, score }) => {
+      // Les produits indexés ne portent pas d'attributs : on les relit dans le
+      // titre, comme pour la source textuelle. Sans eux, la composante
+      // « attributs » valait 0 et bloquait un produit pourtant reconnu.
+      const variant = parseVariantLabel(row.title);
+      const attributes: Attributes = { category: row.category as Attributes["category"] };
+      const color = extractColorName(row.title);
+      if (color) attributes.color = color;
+      const form = /flacon|bouteille|tube|pot|boite|coffret|pompe|spray|sac|bouteille/i.exec(
+        normalize(row.title),
+      )?.[0];
+      if (form) attributes.form = form;
+
+      return {
+        provider: this.name,
+        externalId: row.externalId,
+        url: row.url,
+        title: row.title,
+        description: `Ressemblance visuelle : ${Math.round((score ?? 0) * 100)} %`,
+        images: [{ url: row.imageUrl }],
+        attributes,
+        variant: {
+          ...(variant.colorName ? { colorName: variant.colorName } : {}),
+          ...(variant.capacity ? { capacity: variant.capacity } : {}),
+          ...(extractSize(row.title) ? { size: extractSize(row.title) as string } : {}),
+        },
+        // Le vecteur voyage avec le candidat : la comparaison visuelle devient
+        // un simple cosinus, sans appel de modèle.
+        embedding: row.embedding,
+      };
+    });
   }
 }
