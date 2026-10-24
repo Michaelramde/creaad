@@ -17,7 +17,7 @@
     "preview": "node scripts/preview.mjs",
     "preview:build": "node scripts/build-preview.mjs",
     "collect:login": "node scripts/collector.mjs --login",
-    "collect:meta": "node scripts/collector.mjs --max=10",
+    "collect:meta": "node scripts/collector/meta_apify.mjs --max=20",
     "collect:aliexpress": "node scripts/collector/aliexpress_enrich.mjs --file=scripts/collector/products.txt"
   },
   "dependencies": {
