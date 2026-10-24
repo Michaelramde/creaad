@@ -8,9 +8,68 @@
 import { buildArchetype, type Archetype } from "../archetype/extract.ts";
 import { pickBest } from "../matching/score.ts";
 import { centroid } from "../matching/text.ts";
-import type { Attributes, Category, Embedding, MatchResult, Regime } from "../matching/types.ts";
+import type { Attributes, Category, Embedding, ListingCandidate, MatchResult, Regime } from "../matching/types.ts";
 import { compactVariant, parseVariantLabel } from "../matching/variant.ts";
 import type { Providers } from "../providers/index.ts";
+
+/** Lecture OCR des photos — une panne ne fait pas échouer l'étape. */
+async function runOcr(
+  providers: Providers,
+  imageUrls: readonly string[],
+  warnings: string[],
+): Promise<{ text: string; confidence: number }[]> {
+  if (providers.ocr.extractMany) {
+    try {
+      return await providers.ocr.extractMany(imageUrls);
+    } catch (error) {
+      warnings.push(`OCR indisponible (${providers.ocr.name})`);
+      console.warn("[identify] OCR échoué", error);
+      return imageUrls.map(() => ({ text: "", confidence: 0 }));
+    }
+  }
+
+  return Promise.all(
+    imageUrls.map(async (url) => {
+      try {
+        return await providers.ocr.extract(url);
+      } catch (error) {
+        warnings.push(`OCR indisponible sur une image (${providers.ocr.name})`);
+        console.warn("[identify] OCR échoué", error);
+        return { text: "", confidence: 0 };
+      }
+    }),
+  );
+}
+
+/** Interroge toutes les sources disponibles ; une source en panne est ignorée. */
+async function searchSources(
+  providers: Providers,
+  archetype: Archetype,
+  input: IdentifyInput,
+  warnings: string[],
+): Promise<ListingCandidate[]> {
+  const candidates: ListingCandidate[] = [];
+
+  for (const source of providers.sources) {
+    if (!source.available()) continue;
+    try {
+      // 8 candidats : le produit du commerçant n'est pas toujours dans le top 5
+      // (le classement AliExpress varie selon l'IP et le moment).
+      const found = await source.search({
+        archetype,
+        country: input.country,
+        limit: 8,
+        query: input.userText,
+      });
+      candidates.push(...found);
+    } catch (error) {
+      warnings.push(`Source indisponible : ${source.name}`);
+      console.warn("[identify] source échouée", source.name, error);
+    }
+  }
+
+  return candidates;
+}
 
 export interface IdentifyInput {
   category: Category;
@@ -32,36 +91,44 @@ export interface IdentifyOutput {
   warnings: string[];
 }
 
-export async function identifyArticle(
-  providers: Providers,
+export async function identifyArticle(  providers: Providers,
   input: IdentifyInput,
 ): Promise<IdentifyOutput> {
   const warnings: string[] = [];
 
-  /* 1 — OCR : un appel groupé quand le fournisseur le permet. */
-  let ocrResults: { text: string; confidence: number }[];
+  /**
+   * Tout ce qui ne dépend pas du reste part **en même temps**.
+   *
+   * Avant, les étapes s'enchaînaient : OCR → attributs → recherche → vision,
+   * soit ~25 s à l'écran. Or la recherche n'a besoin que de la requête, et la
+   * requête vient du texte saisi : dès qu'il existe, on peut interroger les
+   * fournisseurs pendant que les modèles lisent les photos.
+   */
+  const named = (input.userText ?? "").trim().length >= 3;
+  const earlyArchetype = named
+    ? buildArchetype({ text: input.userText as string, fallbackCategory: input.category })
+    : null;
 
-  if (providers.ocr.extractMany) {
-    try {
-      ocrResults = await providers.ocr.extractMany(input.imageUrls);
-    } catch (error) {
-      warnings.push(`OCR indisponible (${providers.ocr.name})`);
-      console.warn("[identify] OCR échoué", error);
-      ocrResults = input.imageUrls.map(() => ({ text: "", confidence: 0 }));
-    }
-  } else {
-    ocrResults = await Promise.all(
-      input.imageUrls.map(async (url) => {
-        try {
-          return await providers.ocr.extract(url);
-        } catch (error) {
-          warnings.push(`OCR indisponible sur une image (${providers.ocr.name})`);
-          console.warn("[identify] OCR échoué", error);
-          return { text: "", confidence: 0 };
-        }
-      }),
-    );
-  }
+  const ocrPromise = runOcr(providers, input.imageUrls, warnings);
+  const attributesPromise = providers.attributes.describe(input.imageUrls);
+  const embeddingsPromise = providers.embeddings
+    .embed(input.imageUrls)
+    .catch((error: unknown) => {
+      warnings.push(`Embeddings indisponibles (${providers.embeddings.name})`);
+      console.warn("[identify] embeddings échoués", error);
+      return [] as Embedding[];
+    });
+  const searchPromise = earlyArchetype
+    ? searchSources(providers, earlyArchetype, input, warnings)
+    : null;
+
+  /* 2 — OCR et attributs (une panne d'attributs remonte : elle fausserait le score). */
+  const [ocrResults, attributes, embeddings] = await Promise.all([
+    ocrPromise,
+    attributesPromise,
+    embeddingsPromise,
+  ]);
+  const userEmbedding = centroid(embeddings);
 
   const ocrText = ocrResults
     .map((r) => r.text)
@@ -72,21 +139,12 @@ export async function identifyArticle(
       ? ocrResults.reduce((acc, r) => acc + r.confidence, 0) / ocrResults.length
       : 0;
 
-  /* 2 — Attributs et embeddings : la catégorie vient d'abord de l'image. */
-  // Une absence de données est acceptable ; une panne du fournisseur ne l'est
-  // pas : elle produirait un score faussement bas. On la laisse remonter.
-  const attributes: Attributes = await providers.attributes.describe(input.imageUrls);
-
-  let embeddings: Embedding[] = [];
-  try {
-    embeddings = await providers.embeddings.embed(input.imageUrls);
-  } catch (error) {
-    warnings.push(`Embeddings indisponibles (${providers.embeddings.name})`);
-    console.warn("[identify] embeddings échoués", error);
-  }
-  const userEmbedding = centroid(embeddings);
-
-  /* 3 — Archétype : texte OCR + saisie, puis catégorie vue sur l'image. */
+  /* 3 — Archétype définitif : toujours enrichi par l'OCR.
+   *
+   * L'archétype précoce ne sert qu'à lancer la recherche plus tôt. Le retenir
+   * ferait perdre la contenance lue sur l'étiquette (« serum » au lieu de
+   * « serum 30 ml »), donc le mauvais jeu d'annonces au moment du marché.
+   */
   const corpus = [input.userText ?? "", ocrText, ...ocrResults.map((r) => r.text)]
     .filter(Boolean)
     .join(" ");
@@ -95,25 +153,9 @@ export async function identifyArticle(
     fallbackCategory: attributes.category ?? input.category,
   });
 
-  /* 4 — Candidats fournisseurs : on cherche avec le texte du commerçant. */
-  const candidates = [];
-  for (const source of providers.sources) {
-    if (!source.available()) continue;
-    try {
-      // 8 candidats : le produit du commerçant n'est pas toujours dans le top 5
-      // (le classement AliExpress varie selon l'IP et le moment).
-      const found = await source.search({
-        archetype,
-        country: input.country,
-        limit: 8,
-        query: input.userText,
-      });
-      candidates.push(...found);
-    } catch (error) {
-      warnings.push(`Source indisponible : ${source.name}`);
-      console.warn("[identify] source échouée", source.name, error);
-    }
-  }
+  /* 4 — Candidats fournisseurs : déjà lancés quand le produit était nommé. */
+  const candidates =
+    (await searchPromise) ?? (await searchSources(providers, archetype, input, warnings));
 
   /* 5 — Appariement. */
   let assessments: Map<string, { visual: number; text: number }> | undefined;
