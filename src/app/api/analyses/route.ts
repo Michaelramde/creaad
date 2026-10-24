@@ -6,7 +6,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { putMarketKit } from "@/lib/cache/store";
 import { db } from "@/lib/db";
-import { analyses, planImages, plans, products } from "@/lib/db/schema";
+import { analyses, creativeKits, planImages, plans, products } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { ensureArchetype } from "@/lib/market/store";
 import { createProviders } from "@/lib/providers";
@@ -232,6 +232,23 @@ export async function POST(req: Request) {
       }
     }
 
+    /* ── production : on enregistre le kit créatif s'il a été rédigé ────── */
+    let creativeSummary: unknown = null;
+    if (result.creative?.kit) {
+      await db
+        .insert(creativeKits)
+        .values({ analysisId: analysis.id, content: result.creative.kit as unknown as object })
+        .onConflictDoNothing();
+
+      creativeSummary = {
+        bigIdea: result.creative.kit.bigIdea,
+        angles: result.creative.kit.angles.length,
+        hooks: result.creative.kit.hooks.length,
+        scripts: result.creative.kit.scripts.length,
+        prompts: result.creative.kit.imagePrompts.length,
+      };
+    }
+
     await settleAnalysis({
       userId: session.user.id,
       analysisId: analysis.id,
@@ -260,6 +277,7 @@ export async function POST(req: Request) {
       plan: summarizePlan(plan),
       planId,
       market: marketSummary,
+      creative: creativeSummary,
       warnings: result.warnings,
       charged: true,
     });

@@ -7,7 +7,7 @@ import { ConfirmArticle } from "@/components/confirm-article";
 import { Badge, Card, Kicker, ScoreBar, type Tone } from "@/components/ui";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { analyses, archetypes, marketKits, planImages, plans } from "@/lib/db/schema";
+import { analyses, archetypes, creativeKits, marketKits, planImages, plans } from "@/lib/db/schema";
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
@@ -68,6 +68,27 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
     ? await db.select().from(planImages).where(eq(planImages.planId, plan.id))
     : [];
 
+  const [creative] = await db
+    .select()
+    .from(creativeKits)
+    .where(eq(creativeKits.analysisId, row.id))
+    .limit(1);
+
+  const kit = (creative?.content ?? null) as {
+    bigIdea?: string;
+    angles?: {
+      id: string;
+      hook: string;
+      promise: string;
+      proof: string;
+      objectionHandled: string;
+      sourceAngleRef: string;
+    }[];
+    hooks?: { format: string; text: string }[];
+    scripts?: { format: string; durationS: number; scenes: { atS: number; visual: string }[] }[];
+    imagePrompts?: { prompt: string }[];
+  } | null;
+
   let portfolio: PortfolioEntry[] | null = null;
   let marketMeta: { adsFound: number; advertisers: number; confidence: string } | null = null;
 
@@ -112,18 +133,19 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <div className="flex items-end justify-between">
           <div>
             <p className="text-3xl font-semibold tabular-nums">{row.matchScore ?? "—"}</p>
-            <p className="text-xs text-stone-500">Correspondance article / 100</p>
+            <p className="text-xs text-stone-500">Produit reconnu / 100</p>
           </div>
         </div>
       </Card>
 
-      {/* Planche */}
+      {/* 1 · Montrer */}
       {plan && (
         <Card className="mt-4">
-          <div className="flex items-end justify-between">
+          <Kicker>Montrer · ta planche</Kicker>
+          <div className="mt-1 flex items-end justify-between">
             <div>
               <p className="text-3xl font-semibold tabular-nums">{plan.fidelityScore}</p>
-              <p className="text-xs text-stone-500">Fidélité de la planche / 100</p>
+              <p className="text-xs text-stone-500">Fidélité / 100</p>
             </div>
             <Badge tone={plan.gatePassed ? "ok" : "warn"}>
               {plan.gatePassed ? "Validée" : "À compléter"}
@@ -154,10 +176,10 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         </Card>
       )}
 
-      {/* Angles */}
+      {/* 2 · Convaincre */}
       {portfolio && portfolio.length > 0 && (
         <section className="mt-6">
-          <Kicker>Angles du marché · {marketMeta?.adsFound} annonces</Kicker>
+          <Kicker>Convaincre · les angles du marché ({marketMeta?.adsFound} annonces)</Kicker>
           <div className="mt-2 space-y-2">
             {portfolio.slice(0, 6).map((entry) => (
               <Card key={entry.family}>
@@ -178,6 +200,70 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
               </Card>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* 3 · Produire */}
+      {kit?.angles && kit.angles.length > 0 && (
+        <section className="mt-6">
+          <Kicker>Produire · tes créas</Kicker>
+
+          {kit.bigIdea && (
+            <Card className="mt-2 bg-stone-900 text-white">
+              <p className="text-[15px] leading-relaxed">{kit.bigIdea}</p>
+            </Card>
+          )}
+
+          <div className="mt-2 space-y-2">
+            {kit.angles.slice(0, 3).map((angle) => (
+              <Card key={angle.id}>
+                <p className="text-sm font-semibold">« {angle.hook} »</p>
+                <p className="mt-1 text-xs leading-relaxed text-stone-700">{angle.promise}</p>
+                <dl className="mt-2 space-y-1 text-[11px] text-stone-600">
+                  <div className="flex gap-1.5">
+                    <dt className="w-24 shrink-0 text-stone-400">Preuve</dt>
+                    <dd>{angle.proof}</dd>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <dt className="w-24 shrink-0 text-stone-400">Objection</dt>
+                    <dd>{angle.objectionHandled}</dd>
+                  </div>
+                </dl>
+                <div className="mt-2">
+                  <Badge tone="muted">angle : {angle.sourceAngleRef}</Badge>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {kit.scripts && kit.scripts.length > 0 && kit.scripts[0] && (
+            <Card className="mt-2">
+              <Kicker>
+                Script {kit.scripts[0].durationS} s · {kit.scripts[0].format}
+              </Kicker>
+              <ol className="mt-2 space-y-2">
+                {kit.scripts[0].scenes.map((scene) => (
+                  <li key={scene.atS} className="flex gap-2">
+                    <span className="w-8 shrink-0 text-[11px] tabular-nums text-stone-400">
+                      {scene.atS}s
+                    </span>
+                    <span className="text-xs">{scene.visual}</span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          )}
+
+          {kit.imagePrompts && kit.imagePrompts.length > 0 && kit.imagePrompts[0] && (
+            <details className="mt-2 rounded-2xl border border-stone-200 bg-white p-4">
+              <summary className="cursor-pointer text-xs font-medium text-stone-700">
+                Prompt d&apos;image ({kit.imagePrompts.length})
+              </summary>
+              <pre className="mt-2 whitespace-pre-wrap break-words rounded-xl bg-stone-900 p-3 text-[11px] leading-relaxed text-stone-100">
+{kit.imagePrompts[0].prompt}
+              </pre>
+            </details>
+          )}
         </section>
       )}
 

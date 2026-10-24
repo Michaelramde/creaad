@@ -12,6 +12,7 @@ import {
 } from "./defaults.ts";
 import { GeminiAttributeProvider, GeminiOcrProvider } from "./gemini.ts";
 import { GeminiSlotClassifier, GeminiVisualComparator } from "./gemini-vision.ts";
+import { GeminiCreativeWriter } from "./gemini-writer.ts";
 import { MistralOcrProvider } from "./mistral-ocr.ts";
 import type {
   AttributeProvider,
@@ -76,6 +77,9 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
           slots:
             overrides.slots ??
             new GeminiSlotClassifier(env.GEMINI_API_KEY, env.GEMINI_MODEL),
+          writer:
+            overrides.writer ??
+            new GeminiCreativeWriter(env.GEMINI_API_KEY, env.GEMINI_MODEL),
         }
       : {}),
   };

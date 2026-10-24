@@ -54,6 +54,26 @@ export function parseMarketKit(raw: unknown): MarketKit {
  * présent dans le portefeuille. C'est ce qui empêche un modèle d'inventer
  * un angle au moment de la rédaction.
  */
+export function parseCreativeKitAgainst(
+  raw: unknown,
+  allowedFamilies: readonly string[],
+): CreativeKit {
+  const kit = parseOrThrow(creativeKitSchema, raw, "R3 — kit production");
+  const allowed = new Set(allowedFamilies);
+
+  const unknown = kit.angles
+    .map((a) => a.sourceAngleRef)
+    .filter((ref) => !allowed.has(ref));
+
+  if (unknown.length > 0) {
+    throw new ContractError("R3 — kit production", [
+      `angles.sourceAngleRef : référence(s) absente(s) du kit argumentaire — ${[...new Set(unknown)].join(", ")}`,
+    ]);
+  }
+
+  return kit;
+}
+
 export function parseCreativeKit(
   raw: unknown,
   options: { market?: MarketKit } = {},

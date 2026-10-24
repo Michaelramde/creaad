@@ -67,4 +67,9 @@ export interface Providers {
       slots: readonly { id: string; label: string }[],
     ): Promise<Map<number, string | null>>;
   };
+  /** Rédacteur du kit production. */
+  writer?: {
+    readonly name: string;
+    write(prompt: string): Promise<string>;
+  };
 }

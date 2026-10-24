@@ -5,6 +5,7 @@
  * quelques appels réseau (OCR, vision) et deux calculs purs. Une app
  * minimaliste n'a pas besoin d'un orchestrateur distribué.
  */
+import { buildCreativeStep, type CreativeStepResult } from "./creative.ts";
 import { buildMatrixFor } from "../market/store.ts";
 import { buildPortfolio, type Portfolio } from "../market/portfolio.ts";
 import type { SaturationMatrix } from "../market/types.ts";
@@ -29,6 +30,7 @@ export interface RunAnalysisResult {
   identify: IdentifyOutput;
   plan?: PlanStepResult;
   market?: { matrix: SaturationMatrix; portfolio: Portfolio };
+  creative?: CreativeStepResult;
   warnings: string[];
   /** Vrai si l'analyse s'arrête avant de produire des kits. */
   blocked: boolean;
@@ -77,7 +79,35 @@ export async function runAnalysis(
     warnings.push(
       `Données marché insuffisantes (${matrix.dataQuality.adsFound} annonces) — aucun angle n'est publié.`,
     );
+    return { identify, plan, market: { matrix, portfolio }, warnings, blocked: false };
   }
 
-  return { identify, plan, market: { matrix, portfolio }, warnings, blocked: false };
+  /* ── production : angles, hooks, scripts, prompts ────────────────────── */
+  const variant = identify.match.candidate?.variant;
+  const creative = await buildCreativeStep(providers.writer, {
+    product: {
+      title: identify.match.candidate?.title ?? input.userText ?? identify.archetype.label,
+      archetype: identify.archetype.label,
+      category: input.category,
+      claims: input.userText ? [input.userText] : [],
+      specs: [identify.archetype.capacity].filter((v): v is string => Boolean(v)),
+      ...(variant?.colorName || variant?.capacity
+        ? {
+            variant: [variant?.colorName, variant?.capacity].filter(Boolean).join(" "),
+          }
+        : {}),
+    },
+    portfolio: portfolio.entries.slice(0, 6).map((entry) => ({
+      family: entry.family,
+      action: entry.action,
+      advertisers: entry.figures.advertisers,
+      medianDays: entry.figures.medianDaysRunning,
+      rationale: entry.rationale,
+    })),
+    country: input.country,
+    language: "fr",
+  });
+  warnings.push(...creative.warnings);
+
+  return { identify, plan, market: { matrix, portfolio }, creative, warnings, blocked: false };
 }

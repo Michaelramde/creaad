@@ -5,6 +5,7 @@ import {
   ContractError,
   contractSummary,
   parseCreativeKit,
+  parseCreativeKitAgainst,
   parseMarketKit,
   parseProductKit,
 } from "../src/lib/contracts/index.ts";
@@ -222,4 +223,16 @@ test("R3 : identifiants d'angles dupliqués → refus", () => {
   const raw = creativeKit();
   raw.angles.push({ ...raw.angles[0]! });
   assert.throws(() => parseCreativeKit(raw), ContractError);
+});
+
+test("R3 : un angle qui référence une famille inconnue est refusé", () => {
+  const raw = creativeKit();
+  raw.angles[0]!.sourceAngleRef = "angle-invente";
+  assert.throws(() => parseCreativeKitAgainst(raw, ["avant-apres"]), ContractError);
+});
+
+test("R3 : une référence présente dans le portefeuille est acceptée", () => {
+  const raw = creativeKit();
+  const kit = parseCreativeKitAgainst(raw, ["avant-apres", "prix-offre"]);
+  assert.equal(kit.angles[0]?.sourceAngleRef, "avant-apres");
 });

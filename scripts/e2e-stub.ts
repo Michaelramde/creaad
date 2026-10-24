@@ -44,6 +44,47 @@ const providers = {
     classify: async (images: readonly string[], slots: readonly { id: string }[]) =>
       new Map(images.map((_, index) => [index, slots[index]?.id ?? null])),
   },
+  writer: {
+    name: "stub-writer",
+    write: async () =>
+      JSON.stringify({
+        bigIdea: "Montrer le flacon reçu plutôt que promettre un résultat.",
+        angles: [
+          {
+            id: "a1",
+            insight: "Elles ne croient plus aux promesses.",
+            promise: "Tu paies à la réception.",
+            mechanism: "Colis ouvert à l'écran.",
+            proof: "Flacon filmé sous tous les angles.",
+            objectionHandled: "« Je ne recevrai pas ça. »",
+            hook: "Commande, tu paies à la réception. Regarde dedans.",
+            awarenessLevel: 3,
+            sourceAngleRef: "avant-apres",
+          },
+        ],
+        hooks: [{ format: "ugc", text: "Commande, tu paies à la réception.", durationS: 15 }],
+        scripts: [
+          {
+            format: "ugc",
+            durationS: 15,
+            hookEndsAtS: 2,
+            scenes: [
+              { atS: 0, visual: "Colis fermé dans la main" },
+              { atS: 2, visual: "Ouverture du colis" },
+            ],
+          },
+        ],
+        visualDirection: { palette: ["#E8C55A"], motifs: [], do: [], dont: [] },
+        imagePrompts: [
+          {
+            slotRef: "face",
+            scene: "Flacon sur tissu beige",
+            prompt: "Photographie produit, flacon ambré, lumière naturelle",
+            referenceImages: [],
+          },
+        ],
+      }),
+  },
 };
 
 const slots = requiredSlots("beaute");
@@ -74,6 +115,16 @@ if (result.plan) {
 if (result.market) {
   console.log(`marché      : ${result.market.matrix.dataQuality.adsFound} annonces · publiable=${result.market.matrix.publishable}`);
   console.log(`   angles   : ${result.market.portfolio.entries.slice(0, 4).map((e) => `${e.family}:${e.action}`).join(", ")}`);
+}
+
+if (result.creative) {
+  const kit = result.creative.kit;
+  console.log(
+    `production  : ${kit ? `${kit.angles.length} angle(s), ${kit.hooks.length} hook(s), ${kit.scripts.length} script(s), ${kit.imagePrompts.length} prompt(s)` : "non généré"}`,
+  );
+  if (!kit && result.creative.warnings.length > 0) {
+    console.log(`   raison   : ${result.creative.warnings[0]}`);
+  }
 }
 console.log(`livré       : ${!result.blocked ? "OUI" : "non"} (bloqué=${result.blocked})`);
 
