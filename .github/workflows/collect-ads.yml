@@ -103,3 +103,12 @@ jobs:
           else
             node scripts/collector/aliexpress_enrich.mjs --file=scripts/collector/products.txt --dry-run
           fi
+
+      # L'index visuel grandit à chaque passage : c'est lui qui permet de
+      # retrouver « tout ce qui ressemble » à la photo d'un commerçant.
+      - name: Indexer visuellement les produits
+        if: ${{ inputs.dry_run == '0' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node scripts/index-products.mjs --per=2
