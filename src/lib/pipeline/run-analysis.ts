@@ -139,6 +139,9 @@ export async function runAnalysis(
     photos: planPhotos,
     labelOcrConfidence: identify.ocrConfidence,
     listingImages: identify.match.candidate?.images.map((i) => i.url) ?? [],
+    ...(selectionImages?.variantImages[0]?.url
+      ? { pinnedImageUrl: selectionImages.variantImages[0].url }
+      : {}),
   });
   warnings.push(...plan.warnings);
 

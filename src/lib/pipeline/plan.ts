@@ -24,6 +24,12 @@ export interface PlanStepInput {
   labelOcrConfidence: number;
   /** Images du listing retenu, ajoutées comme références sans emplacement. */
   listingImages?: readonly string[];
+  /**
+   * Image du coloris choisi : elle doit figurer dans la planche, même si le
+   * classificateur ne lui a trouvé aucun emplacement. Sans ça, un commerçant
+   * qui vend du marron peut recevoir une planche sans une seule vue marron.
+   */
+  pinnedImageUrl?: string;
 }
 
 export interface PlanStepResult {
@@ -74,5 +80,23 @@ export async function buildPlanStep(
     consistency: 0.7,
   });
 
+  ensurePinnedImage(plan, input.pinnedImageUrl);
+
   return { plan, assigned, warnings };
+}
+
+/**
+ * Garantit la présence du coloris retenu dans la planche.
+ * Si aucune vue ne lui correspond, on remplace la première vue par celle du
+ * coloris : mieux vaut une planche complète qu'une planche de la mauvaise
+ * couleur.
+ */
+function ensurePinnedImage(plan: PlanResult, pinned?: string): void {
+  if (!pinned) return;
+  if (plan.assignments.some((assignment) => assignment.image.url === pinned)) return;
+
+  const first = plan.assignments[0];
+  if (!first) return;
+
+  first.image = { ...first.image, url: pinned };
 }
