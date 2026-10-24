@@ -111,6 +111,9 @@ export async function POST(req: Request) {
       userId: session.user.id,
       country: input.country,
       creditXof: wallet.creditXof,
+      // Étape 1 uniquement : l'étude de marché reste une seconde demande
+      // facturée. Sans coloris à choisir, l'analyse s'arrête ici aussi.
+      phase: "produit",
       result,
     });
 

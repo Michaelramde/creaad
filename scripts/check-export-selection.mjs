@@ -24,7 +24,7 @@ await pool.query(
   [userId, `exp-${userId}`],
 );
 
-const created = await (
+let created = await (
   await fetch(`${BASE}/api/analyses`, {
     method: "POST",
     headers: { "Content-Type": "application/json", cookie, Origin: BASE },
@@ -32,11 +32,10 @@ const created = await (
   })
 ).json();
 
+/* Coloris unique : l'analyse s'arrête déjà à produit_pret, sans choix à faire. */
 if (!created.variants) {
-  console.log(`analyse refusée : ${created.status ?? created.error}`);
-  await pool.end();
-  process.exit(1);
-}
+  console.log(`analyse directe : ${created.status ?? created.error}`);
+} else {
 
 const axis = created.variants[0];
 const chosen = axis.values.filter((v) => v.available).slice(0, 2);
@@ -49,6 +48,7 @@ const step1 = await (
   })
 ).json();
 console.log(`étape 1 : ${step1.status}`);
+}
 
 const zipCount = async (query = "") => {
   const res = await fetch(`${BASE}/api/analyses/${created.analysisId}/export${query}`, { headers: { cookie } });
