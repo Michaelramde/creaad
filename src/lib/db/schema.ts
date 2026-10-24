@@ -1,4 +1,5 @@
 import { relations, sql } from "drizzle-orm";
+import type { Facts, PoolImage, ProductVariant, VariantAxis } from "../products/types.ts";
 import {
   boolean,
   check,
@@ -106,6 +107,43 @@ export const productIndex = pgTable(
   },
   (table) => [uniqueIndex("product_index_provider_external_unique").on(table.provider, table.externalId)],
 );
+
+/**
+ * Cache d'identité produit — voir src/lib/products/records.ts.
+ * Une fiche payée une fois, réutilisée 30 jours.
+ */
+export const productRecords = pgTable(
+  "product_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    productId: text("product_id").notNull(),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    price: numeric("price", { precision: 12, scale: 2 }),
+    currency: text("currency"),
+    rating: numeric("rating", { precision: 3, scale: 2 }),
+    sold: integer("sold"),
+    gallery: jsonb("gallery").$type<PoolImage[]>().notNull().default([]),
+    variantAxes: jsonb("variant_axes").$type<VariantAxis[]>().notNull().default([]),
+    variants: jsonb("variants").$type<ProductVariant[]>().notNull().default([]),
+    specs: jsonb("specs").$type<Record<string, string>>().notNull().default({}),
+    facts: jsonb("facts").$type<Facts>().notNull().default({}),
+    images: jsonb("images").$type<PoolImage[]>().notNull().default([]),
+    seller: jsonb("seller").$type<Record<string, unknown>>(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [uniqueIndex("product_records_provider_product_unique").on(t.provider, t.productId)],
+);
+
+/** Empreinte de photo : la même image envoyée deux fois ne se repaie pas. */
+export const imageQueries = pgTable("image_queries", {
+  hash: text("hash").primaryKey(),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
 
 export const products = pgTable(  "products",
   {

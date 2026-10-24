@@ -44,6 +44,12 @@ const schema = z.object({
   ALIEXPRESS_TRACKING_ID: z.string().default("creaad"),
   MISTRAL_API_KEY: z.string().optional(),
   APIFY_TOKEN: z.string().optional(),
+  /** Plafond de dépense Apify sur 24 h. 0 = illimité. */
+  APIFY_DAILY_CAP_USD: z.coerce.number().min(0).default(1),
+  /** Acteurs retenus — surchargeables sans toucher au code. */
+  ACTOR_IMAGE_SEARCH: z.string().default("piotrv1001~aliexpress-image-search-scraper"),
+  ACTOR_PRODUCT_DETAIL: z.string().default("zen-studio~aliexpress-scraper"),
+  ACTOR_SUPPLIERS: z.string().default("dev00~alibaba-1688-aliexpress-reverse-image-search-api"),
 
   CREDIT_XOF: z.coerce.number().int().positive().default(1000),
   MIN_TOPUP_XOF: z.coerce.number().int().positive().default(5000),
