@@ -43,12 +43,14 @@ export async function GET(req: Request) {
   }
 
   /* ── Analyses abandonnées : on rend la réservation ────────────────────── */
+  // `variante_a_choisir` en fait partie : c'est l'état où l'on attend une
+  // réponse de l'utilisateur, et donc celui où il peut fermer l'onglet.
   const abandoned = await db
     .select({ id: analyses.id, userId: analyses.userId, reservedXof: analyses.reservedXof })
     .from(analyses)
     .where(
       and(
-        inArray(analyses.status, ["ocr", "appariement", "reservee", "creee"]),
+        inArray(analyses.status, ["ocr", "appariement", "reservee", "creee", "variante_a_choisir"]),
         sql`${analyses.reservedXof} > 0`,
         sql`${analyses.createdAt} < now() - (${ABANDON_MINUTES} || ' minutes')::interval`,
       ),
