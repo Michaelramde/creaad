@@ -64,7 +64,11 @@ RÈGLES STRICTES :
 Pour CHAQUE image, réponds :
 - "i" : son numéro (1 à ${count})
 - "type" : un des cinq mots ci-dessus
-- "couleur" : la couleur du produit visible, exactement parmi ${colours.map((c) => `"${c}"`).join(", ")}, ou "aucune" si le produit est absent ou si plusieurs coloris apparaissent
+- "couleur" : la couleur du produit **visible sur l'image**, exactement parmi ${colours.map((c) => `"${c}"`).join(", ")}, ou "aucune".
+    IMPORTANT : la couleur se donne **quelle que soit la nature de l'image**.
+    Si une infographie marketing montre le sac marron, réponds "marketing" ET la couleur marron.
+    Ne réponds "aucune" que si aucun produit n'est visible, ou si plusieurs coloris
+    apparaissent côte à côte sans qu'on puisse en isoler un.
 - "texte_technique" : true si l'image contient des mesures ou un tableau de valeurs
 
 Réponds uniquement par un tableau JSON :
@@ -161,7 +165,10 @@ export async function classifyImages(input: {
           type,
           showsProduct,
           hasTechnicalText: Boolean(item.texte_technique) || type === "spec",
-          ...(showsProduct && colour ? { variantValueId: colour.valueId } : {}),
+          // Le coloris est attaché **quelle que soit la nature** : une infographie
+          // qui montre le sac marron appartient au marron. La nature dit à quoi
+          // sert l'image, la couleur dit ce qu'elle représente.
+          ...(colour ? { variantValueId: colour.valueId } : {}),
         });
       }
     } catch (error) {

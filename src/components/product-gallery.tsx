@@ -165,7 +165,7 @@ export function ProductGallery({
       <p className="mt-1.5 text-[10px] text-stone-500">
         {saving
           ? "Enregistrement…"
-          : "Les images de mesures et les visuels sans produit restent toujours inclus."}
+          : "Chaque image suit son coloris, même une infographie. Celles sans coloris restent toujours incluses."}
       </p>
     </section>
   );
