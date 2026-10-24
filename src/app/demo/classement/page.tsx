@@ -12,6 +12,7 @@ const LABEL: Record<string, { text: string; className: string }> = {
   packshot: { text: "packshot", className: "bg-emerald-600" },
   scene: { text: "scène", className: "bg-sky-600" },
   spec: { text: "produit + mesures", className: "bg-violet-600" },
+  marketing: { text: "marketing", className: "bg-amber-600" },
   sans_produit: { text: "sans produit", className: "bg-stone-600" },
 };
 

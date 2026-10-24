@@ -17,11 +17,11 @@
  */
 import { generate, toInlinePart } from "../providers/gemini.ts";
 
-export type ImageType = "packshot" | "scene" | "spec" | "sans_produit";
+export type ImageType = "packshot" | "scene" | "spec" | "marketing" | "sans_produit";
 
 export interface ClassifiedImage {
   type: ImageType;
-  /** Le produit est-il visible ? `sans_produit` est le seul cas négatif. */
+  /** Le produit est-il visible ? `sans_produit` et `marketing` sont négatifs. */
   showsProduct: boolean;
   /** Coloris identifié, quand le produit est visible et la couleur lisible. */
   variantValueId?: string;
@@ -29,21 +29,43 @@ export interface ClassifiedImage {
   hasTechnicalText: boolean;
 }
 
-const PROMPT = (count: number, colours: string[]) => `Tu examines ${count} images d'un même produit, dans cet ordre.
+const PROMPT = (count: number, colours: string[]) => `Tu tries ${count} images d'un même produit.
 
-Pour CHACUNE, réponds avec :
+CINQ catégories, à choisir exactement :
+
+"packshot"
+  Le produit seul, posé, sur fond neutre.
+  Ex. : un sac sur fond blanc ; un gros plan de la fermeture du sac.
+
+"scene"
+  Le produit porté, utilisé, ou posé dans un décor réel.
+  Ex. : un homme qui porte le sac dans la rue ; le sac posé sur une table en bois.
+
+"spec"
+  LE PRODUIT EST VISIBLE **ET** l'image contient un tableau de mesures, des cotes,
+  ou une liste de spécifications chiffrées.
+  Ex. : le sac dessiné avec « 32CM / 18CM / 7CM » et un tableau Brand/Model/Material.
+
+"marketing"
+  Une infographie de marque SANS vue nette du produit : storytelling, photos de
+  famille ou d'équipe, packaging, conseils d'entretien, comparaison de couleurs,
+  schéma de protection.
+  Ex. : « TIPS FOR LEATHER CARE » ; « LAYER OF PROTECTION » ; photo d'une famille.
+
+"sans_produit"
+  Aucun produit, aucune marque : logo seul, bannière promotionnelle, bloc de texte,
+  icônes, photo d'atelier.
+
+RÈGLES STRICTES :
+- Un logo de marque n'est PAS un packshot → "sans_produit".
+- Une image avec beaucoup de texte qui ne montre pas le produit → "marketing".
+- Un collage de plusieurs vues portées → "scene". De plusieurs vues posées → "packshot".
+
+Pour CHAQUE image, réponds :
 - "i" : son numéro (1 à ${count})
-- "type" : exactement l'un de ces quatre mots :
-    "packshot"     = le produit seul, posé, sur fond neutre
-    "scene"        = le produit porté, utilisé, ou mis en situation réelle
-    "spec"         = le PRODUIT EST VISIBLE **ET** l'image contient un tableau de mesures,
-                     des cotes, ou une liste de spécifications
-    "sans_produit" = aucun produit visible : logo, bannière marketing, bloc de texte, icônes
-- "couleur" : la couleur du produit visible, exactement parmi ${colours.map((c) => `"${c}"`).join(", ")}, ou "aucune" si le produit n'est pas visible ou si sa couleur n'est pas identifiable
-- "texte_technique" : true si l'image contient des mesures, dimensions ou un tableau de valeurs, sinon false
-
-Attention : un logo de marque n'est PAS un packshot → "sans_produit".
-Un collage de plusieurs vues du produit → "scene" si l'une est portée, sinon "packshot".
+- "type" : un des cinq mots ci-dessus
+- "couleur" : la couleur du produit visible, exactement parmi ${colours.map((c) => `"${c}"`).join(", ")}, ou "aucune" si le produit est absent ou si plusieurs coloris apparaissent
+- "texte_technique" : true si l'image contient des mesures ou un tableau de valeurs
 
 Réponds uniquement par un tableau JSON :
 [{"i":1,"type":"packshot","couleur":"…","texte_technique":false}]
@@ -64,7 +86,20 @@ function extractArray(raw: string): unknown[] {
   }
 }
 
-const VALID: ImageType[] = ["packshot", "scene", "spec", "sans_produit"];
+const VALID: ImageType[] = ["packshot", "scene", "spec", "marketing", "sans_produit"];
+
+/** Une URL morte ne doit pas être classée : le modèle ne verrait qu'un blanc. */
+async function isReachable(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: "GET", signal: AbortSignal.timeout(12_000) });
+    if (!res.ok) return false;
+    const length = Number(res.headers.get("content-length") ?? 0);
+    // Une image de moins de 2 Ko est une vignette ou une page d'erreur.
+    return length === 0 || length > 2048;
+  } catch {
+    return false;
+  }
+}
 
 export async function classifyImages(input: {
   apiKey: string;
@@ -73,7 +108,9 @@ export async function classifyImages(input: {
   model?: string;
   batchSize?: number;
 }): Promise<Map<number, ClassifiedImage>> {
-  const batchSize = input.batchSize ?? 8;
+  // Des lots de 4 : l'attention du modèle se dilue au-delà, et les erreurs
+  // d'infographie apparaissent précisément sur les lots chargés.
+  const batchSize = input.batchSize ?? 4;
   const colourNames = input.colours.map((colour) => colour.name.replace(/^\d+\s*/, ""));
   const result = new Map<number, ClassifiedImage>();
 
@@ -81,14 +118,17 @@ export async function classifyImages(input: {
     const batch = input.urls.slice(offset, offset + batchSize);
 
     const parts: unknown[] = [{ text: PROMPT(batch.length, colourNames) }];
-    for (const url of batch) {
+    const positions: number[] = [];
+    for (const [localIndex, url] of batch.entries()) {
+      if (!(await isReachable(url))) continue;
       try {
         parts.push(await toInlinePart(url));
+        positions.push(localIndex);
       } catch {
-        // Image inaccessible : elle ne sera pas classée, donc écartée.
+        // Inaccessible : non classée, donc écartée du livrable.
       }
     }
-    if (parts.length <= 1) continue;
+    if (positions.length === 0) continue;
 
     try {
       const raw = await generate(input.apiKey, input.model ?? "gemini-3.5-flash", parts, {
@@ -104,17 +144,20 @@ export async function classifyImages(input: {
           texte_technique?: boolean;
         };
         const index = Number(item.i);
-        if (!Number.isInteger(index) || index < 1 || index > batch.length) continue;
+        if (!Number.isInteger(index) || index < 1 || index > positions.length) continue;
 
         const type = (VALID.includes(item.type as ImageType) ? item.type : "sans_produit") as ImageType;
-        const showsProduct = type !== "sans_produit";
+        const showsProduct = type === "packshot" || type === "scene" || type === "spec";
 
         const colourName = String(item.couleur ?? "").toLowerCase().trim();
-        const colour = input.colours.find(
-          (candidate) => candidate.name.replace(/^\d+\s*/, "").toLowerCase() === colourName,
-        );
+        const colour =
+          colourName === "aucune"
+            ? undefined
+            : input.colours.find(
+                (candidate) => candidate.name.replace(/^\d+\s*/, "").toLowerCase() === colourName,
+              );
 
-        result.set(offset + index - 1, {
+        result.set(offset + (positions[index - 1] ?? 0), {
           type,
           showsProduct,
           hasTechnicalText: Boolean(item.texte_technique) || type === "spec",

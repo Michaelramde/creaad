@@ -10,7 +10,7 @@
 export type ImageOrigin = "variant" | "gallery" | "review" | "supplier";
 
 /** Nature d'une image. Voir `PoolImage.kind`. */
-export type ImageKind = "packshot" | "scene" | "spec" | "sans_produit";
+export type ImageKind = "packshot" | "scene" | "spec" | "marketing" | "sans_produit";
 
 export const IMAGE_RANK: Record<ImageOrigin, number> = {
   variant: 0,

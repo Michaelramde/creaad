@@ -22,6 +22,7 @@ const NATURE: Record<ImageKind, { label: string; badge: string }> = {
   packshot: { label: "Produit", badge: "bg-stone-900/85" },
   scene: { label: "En scène", badge: "bg-sky-700/85" },
   spec: { label: "Mesures", badge: "bg-violet-700/85" },
+  marketing: { label: "Marketing", badge: "bg-amber-700/85" },
   sans_produit: { label: "Sans produit", badge: "bg-stone-500/85" },
 };
 

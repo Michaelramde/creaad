@@ -80,6 +80,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     packshot: "produit seul",
     scene: "en scène",
     spec: "produit + mesures",
+    marketing: "marketing",
     sans_produit: "sans produit",
   };
 
