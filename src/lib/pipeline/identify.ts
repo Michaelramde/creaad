@@ -97,7 +97,9 @@ export async function identifyArticle(
   for (const source of providers.sources) {
     if (!source.available()) continue;
     try {
-      const found = await source.search({ archetype, country: input.country, limit: 5 });
+      // 8 candidats : le produit du commerçant n'est pas toujours dans le top 5
+      // (le classement AliExpress varie selon l'IP et le moment).
+      const found = await source.search({ archetype, country: input.country, limit: 8 });
       candidates.push(...found);
     } catch (error) {
       warnings.push(`Source indisponible : ${source.name}`);

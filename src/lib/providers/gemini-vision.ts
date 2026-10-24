@@ -88,7 +88,7 @@ export class GeminiVisualComparator implements VisualComparator {
       text: `DESCRIPTION FOURNIE PAR LE COMMERÇANT : "${userText.slice(0, 600)}"`,
     });
 
-    for (const candidate of candidates.slice(0, 6)) {
+    for (const candidate of candidates.slice(0, 8)) {
       parts.push({ text: `CANDIDAT ${candidate.id} — titre : "${candidate.title.slice(0, 300)}"` });
       if (candidate.imageUrl) {
         const inline = await toInlinePart(candidate.imageUrl).catch(() => null);
