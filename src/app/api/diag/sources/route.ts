@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { parseSearchItems } from "@/lib/providers/aliexpress-http";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,13 @@ export async function GET(req: Request) {
       cache: "no-store",
     });
     const body = await res.text();
+    const items = parseSearchItems(body).slice(0, 3).map((item) => ({
+      id: item.productId,
+      title: item.title?.displayTitle?.slice(0, 80),
+      image: item.image?.imgUrl?.startsWith("//")
+        ? `https:${item.image.imgUrl}`
+        : item.image?.imgUrl,
+    }));
 
     return NextResponse.json({
       status: res.status,
@@ -40,6 +49,7 @@ export async function GET(req: Request) {
       productLinks: (body.match(/\/catalog\/\?q=|class="prd/g) ?? []).length,
       ogTitle: /<meta property="og:title" content="([^"]*)"/i.exec(body)?.[1]?.slice(0, 80) ?? null,
       blocked: /captcha|challenge|noscript|robot|access denied/i.test(body.slice(0, 5000)),
+      items,
     });
   } catch (error) {
     return NextResponse.json({ error: String(error).slice(0, 200) }, { status: 502 });

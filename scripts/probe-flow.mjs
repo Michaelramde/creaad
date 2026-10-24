@@ -1,80 +1,102 @@
 /**
- * Parcours complet en production : inscription → crédit → analyse → page de résultat.
- * Crédite le compte de test directement en base (action d'administration).
+ * Parcours complet en production, avec un produit réellement présent dans les
+ * résultats de recherche (le commerçant possède ce produit).
  */
 import { readFile } from "node:fs/promises";
 import { Pool } from "@neondatabase/serverless";
 
 const BASE = "https://creaad.site";
-const email = `flow-${Date.now()}@example.test`;
-const password = "motdepasse-2026";
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 const envText = await readFile(".env.local", "utf8");
 const dbUrl = /^DATABASE_URL="?([^"\n]+)"?/m.exec(envText)?.[1];
-if (!dbUrl) throw new Error("DATABASE_URL absente de .env.local");
+if (!dbUrl) throw new Error("DATABASE_URL absente");
 
-/* 1 — inscription */
+/* 1 — le commerçant photographie un produit réellement listé */
+const searchHtml = await (
+  await fetch("https://fr.aliexpress.com/w/wholesale-serum-30ml.html", {
+    headers: { "User-Agent": UA, "Accept-Language": "fr-FR,fr;q=0.9" },
+    signal: AbortSignal.timeout(30_000),
+  })
+).text();
+
+function extractArray(source, startIndex) {
+  let depth = 0, inString = false, escaped = false;
+  for (let i = startIndex; i < source.length; i += 1) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "[") depth += 1;
+    else if (ch === "]") { depth -= 1; if (depth === 0) return source.slice(startIndex, i + 1); }
+  }
+  return null;
+}
+const marker = '"itemList":{"content":[';
+const at = searchHtml.indexOf(marker);
+const raw = at >= 0 ? extractArray(searchHtml, at + marker.length - 1) : null;
+const products = raw ? JSON.parse(raw) : [];
+const product = products[0];
+if (!product) throw new Error("aucun produit dans la page de recherche");
+
+const title = product.title?.displayTitle;
+const imgRaw = product.image?.imgUrl ?? ""; const image = imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw;
+console.log(`produit     : ${title?.slice(0, 60)}`);
+console.log(`photo       : ${image?.slice(0, 60)}…`);
+
+/* 2 — compte + crédit */
+const email = `flow2-${Date.now()}@example.test`;
 const signUp = await fetch(`${BASE}/api/auth/sign-up/email`, {
   method: "POST",
   headers: { "Content-Type": "application/json", Origin: BASE },
-  body: JSON.stringify({ email, password, name: "Flow" }),
+  body: JSON.stringify({ email, password: "motdepasse-2026", name: "Flow2" }),
 });
 const cookie = (signUp.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
-console.log(`inscription : HTTP ${signUp.status}${cookie ? " · session" : " · PAS DE SESSION"}`);
-if (!cookie) process.exit(1);
+if (!cookie) throw new Error("pas de session");
+console.log(`inscription : HTTP ${signUp.status} · session`);
 
-/* 2 — crédit de test */
 const pool = new Pool({ connectionString: dbUrl, max: 1 });
 pool.on("error", (e) => console.error("db:", e.message));
-
-const userRow = await pool.query('SELECT id FROM "user" WHERE email = $1', [email]);
-const userId = userRow.rows[0]?.id;
-if (!userId) throw new Error("utilisateur introuvable");
-
+const userId = (await pool.query('SELECT id FROM "user" WHERE email = $1', [email])).rows[0]?.id;
 await pool.query(
-  `INSERT INTO wallet_transactions (user_id, type, amount_xof, balance_after, idempotency_key, metadata)
-   VALUES ($1, 'ajustement', 5000, 5000, $2, '{"reason":"test e2e"}')`,
-  [userId, `test-credit-${userId}`],
+  `INSERT INTO wallet_transactions (user_id, type, amount_xof, balance_after, idempotency_key)
+   VALUES ($1, 'ajustement', 5000, 5000, $2)`,
+  [userId, `flow2-credit-${userId}`],
 );
-console.log("crédit      : 5 000 FCFA ajoutés");
+console.log("crédit      : 5 000 FCFA");
 
-const wallet = await fetch(`${BASE}/api/wallet`, { headers: { cookie } });
-const walletBody = await wallet.json();
-console.log(`wallet      : ${walletBody.balanceXof} FCFA · ${walletBody.remaining} analyse(s)`);
-
-/* 3 — analyse avec 5 photos réelles */
-const photos = [
-  "https://ae-pic-a1.aliexpress-media.com/kf/S8e94f188513541a383f3ad641ff3874aH.jpg",
-];
-
+/* 3 — analyse */
 const started = Date.now();
-const analysis = await fetch(`${BASE}/api/analyses`, {
+const res = await fetch(`${BASE}/api/analyses`, {
   method: "POST",
   headers: { "Content-Type": "application/json", cookie, Origin: BASE },
   body: JSON.stringify({
     category: "beaute",
     regime: "non_detenu",
     country: "CI",
-    images: photos.map((url) => ({ url, width: 1200, height: 1200 })),
-    userText: "Sérum vitamine C 30 ml visage",
+    images: [{ url: image, width: 1200, height: 1200 }],
+    userText: title,
   }),
 });
-
-const body = await analysis.json();
-console.log(`analyse     : HTTP ${analysis.status} en ${((Date.now() - started) / 1000).toFixed(0)} s`);
-console.log(`statut      : ${body.status ?? body.error} ${body.message ?? ""}`);
-if (body.match) console.log(`score       : ${body.match.score}/100`);
-if (body.plan) console.log(`planche     : ${body.plan.score}/100 · ${body.plan.gate}`);
+const body = await res.json();
+console.log(`analyse     : HTTP ${res.status} en ${((Date.now() - started) / 1000).toFixed(0)} s`);
+console.log(`statut      : ${body.status ?? body.error}`);
+if (body.match) { console.log(`score       : ${body.match.score}/100 (${body.match.gateReason})`); for (const [k, v] of Object.entries(body.match.components ?? {})) console.log(`   ${k.padEnd(11)} ${Math.round(v.points)}/${v.max} ${v.evidence ? v.detail : "(sans preuve)"}`); }
+if (body.plan) console.log(`planche     : ${body.plan.score}/100 · ${body.plan.gate} · manquantes: ${body.plan.missing.join(", ") || "aucune"}`);
 if (body.market) console.log(`marché      : ${body.market.adsFound} annonces · ${body.market.angles?.length ?? 0} angles`);
-if (body.creative) console.log(`production  : ${body.creative.angles} angle(s), ${body.creative.hooks} hook(s)`);
-if (body.warnings?.length) console.log(`avertissements : ${body.warnings.slice(0, 2).join(" | ")}`);
+if (body.creative) console.log(`production  : ${body.creative.angles} angle(s), ${body.creative.hooks} hook(s), ${body.creative.scripts} script(s)`);
+if (body.warnings?.length) console.log(`alertes     : ${body.warnings.slice(0, 2).join(" | ")}`);
 
-/* 4 — page de résultat */
 if (body.analysisId) {
   const page = await fetch(`${BASE}/analyses/${body.analysisId}`, { headers: { cookie } });
   const html = await page.text();
   const sections = ["Montrer", "Convaincre", "Produire"].filter((s) => html.includes(s));
-  console.log(`page        : HTTP ${page.status} · sections rendues : ${sections.join(", ") || "aucune"}`);
+  console.log(`page        : HTTP ${page.status} · sections : ${sections.join(", ") || "aucune"}`);
 }
 
 await pool.end();
