@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { ConfirmArticle } from "@/components/confirm-article";
+import { CopyButton } from "@/components/copy-button";
 import { Badge, Card, Kicker, ScoreBar, type Tone } from "@/components/ui";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -288,6 +289,20 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       )}
 
       <div className="mt-8 space-y-3">
+        {kit?.angles && kit.angles.length > 0 && (
+          <details className="rounded-2xl border border-stone-200 bg-white p-4">
+            <summary className="cursor-pointer text-xs font-medium text-stone-700">
+              Emporter le kit (texte à copier)
+            </summary>
+            <div className="mt-3 flex justify-end">
+              <CopyButton text={buildExport(row.archetypeSlug, portfolio, kit)} label="Copier le kit" />
+            </div>
+            <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-stone-50 p-3 text-[11px] leading-relaxed text-stone-700">
+{buildExport(row.archetypeSlug, portfolio, kit)}
+            </pre>
+          </details>
+        )}
+
         <Link
           href="/nouveau"
           className="block rounded-2xl bg-stone-900 px-5 py-3.5 text-center text-sm font-medium text-white"
@@ -300,4 +315,65 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       </div>
     </main>
   );
+}
+
+/** Version texte du kit, pour la coller dans un autre outil. */
+function buildExport(
+  archetype: string | null,
+  portfolio: PortfolioEntry[] | null,
+  kit: {
+    bigIdea?: string;
+    angles?: { hook: string; promise: string; proof: string; objectionHandled: string; sourceAngleRef: string }[];
+    hooks?: { format: string; text: string }[];
+    scripts?: { durationS: number; scenes: { atS: number; visual: string }[] }[];
+    imagePrompts?: { prompt: string }[];
+  },
+): string {
+  const lines: string[] = [];
+  lines.push(`# Kit publicitaire — ${(archetype ?? "produit").replace(/-/g, " ")}`, "");
+
+  if (kit.bigIdea) lines.push("## Idée directrice", kit.bigIdea, "");
+
+  if (kit.angles?.length) {
+    lines.push("## Angles");
+    for (const angle of kit.angles) {
+      lines.push(
+        `### « ${angle.hook} »`,
+        `- Promesse : ${angle.promise}`,
+        `- Preuve : ${angle.proof}`,
+        `- Objection traitée : ${angle.objectionHandled}`,
+        `- Angle de marché : ${angle.sourceAngleRef}`,
+        "",
+      );
+    }
+  }
+
+  if (kit.hooks?.length) {
+    lines.push("## Hooks");
+    for (const hook of kit.hooks) lines.push(`- [${hook.format}] ${hook.text}`);
+    lines.push("");
+  }
+
+  if (kit.scripts?.length) {
+    lines.push(`## Script ${kit.scripts[0]?.durationS ?? 15} s`);
+    for (const scene of kit.scripts[0]?.scenes ?? []) lines.push(`- ${scene.atS}s — ${scene.visual}`);
+    lines.push("");
+  }
+
+  if (kit.imagePrompts?.length) {
+    lines.push("## Prompts d'image");
+    for (const prompt of kit.imagePrompts) lines.push(`- ${prompt.prompt}`);
+    lines.push("");
+  }
+
+  if (portfolio?.length) {
+    lines.push("## Angles observés sur le marché");
+    for (const entry of portfolio.slice(0, 6)) {
+      lines.push(
+        `- ${entry.family} — ${entry.action} (${entry.figures.advertisers} annonceurs, ${Math.round(entry.figures.medianDaysRunning)} j)`,
+      );
+    }
+  }
+
+  return lines.join("\n").trim();
 }

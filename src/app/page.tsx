@@ -52,6 +52,29 @@ export default function Home() {
         5 000 FCFA · 5 analyses · tes crédits ne sont débités qu&apos;à la livraison
       </p>
 
+      <section className="mt-12">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-stone-400">
+          Comment ça marche
+        </p>
+        <ol className="mt-3 space-y-3">
+          {[
+            ["Photographie ton produit", "3 à 6 photos suffisent, prises au téléphone."],
+            ["Reçois tes 3 kits", "La planche visuelle, les angles du marché, les créas à tourner."],
+            ["Emporte et produis", "Copie le kit, génère tes visuels, lance ta campagne."],
+          ].map(([title, body], index) => (
+            <li key={title} className="flex gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-900 text-[11px] font-semibold text-white">
+                {index + 1}
+              </span>
+              <div>
+                <p className="text-sm font-medium">{title}</p>
+                <p className="text-xs leading-relaxed text-stone-500">{body}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       <section className="mt-12 space-y-3">
         {KITS.map((kit) => (
           <article key={kit.title} className="rounded-2xl border border-stone-200 bg-white p-4">
