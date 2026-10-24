@@ -111,3 +111,9 @@ for (const row of kept) {
 
 await pool.end();
 console.log(`${written} ligne(s) enregistrée(s) dans ad_observations.`);
+
+// Des lignes à écrire et zéro écrit : c'est un problème de base, pas de collecte.
+if (written === 0 && kept.length > 0) {
+  console.error("Écriture impossible — vérifie DATABASE_URL (mot de passe, base, pooling).");
+  process.exit(1);
+}
