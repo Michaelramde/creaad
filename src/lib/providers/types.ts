@@ -34,7 +34,16 @@ export interface EmbeddingProvider {
 export interface SourceAdapter {
   readonly name: string;
   available(): boolean;
-  search(input: { archetype: Archetype; country: string; limit?: number }): Promise<ListingCandidate[]>;
+  search(input: {
+    archetype: Archetype;
+    country: string;
+    limit?: number;
+    /**
+     * Texte saisi par le commerçant. Indispensable : « sac » ramène les sacs
+     * les plus populaires, « sac jeep 3 en 1 » ramène le bon.
+     */
+    query?: string;
+  }): Promise<ListingCandidate[]>;
 }
 
 export interface ProviderStatus {

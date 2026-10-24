@@ -72,13 +72,7 @@ export async function identifyArticle(
       ? ocrResults.reduce((acc, r) => acc + r.confidence, 0) / ocrResults.length
       : 0;
 
-  /* 2 — Archétype : texte OCR + saisie utilisateur. */
-  const corpus = [input.userText ?? "", ocrText, ...ocrResults.map((r) => r.text)]
-    .filter(Boolean)
-    .join(" ");
-  const archetype = buildArchetype({ text: corpus, fallbackCategory: input.category });
-
-  /* 3 — Attributs et embeddings utilisateur (peuvent être vides). */
+  /* 2 — Attributs et embeddings : la catégorie vient d'abord de l'image. */
   // Une absence de données est acceptable ; une panne du fournisseur ne l'est
   // pas : elle produirait un score faussement bas. On la laisse remonter.
   const attributes: Attributes = await providers.attributes.describe(input.imageUrls);
@@ -92,14 +86,28 @@ export async function identifyArticle(
   }
   const userEmbedding = centroid(embeddings);
 
-  /* 4 — Candidats fournisseurs. */
+  /* 3 — Archétype : texte OCR + saisie, puis catégorie vue sur l'image. */
+  const corpus = [input.userText ?? "", ocrText, ...ocrResults.map((r) => r.text)]
+    .filter(Boolean)
+    .join(" ");
+  const archetype = buildArchetype({
+    text: corpus,
+    fallbackCategory: attributes.category ?? input.category,
+  });
+
+  /* 4 — Candidats fournisseurs : on cherche avec le texte du commerçant. */
   const candidates = [];
   for (const source of providers.sources) {
     if (!source.available()) continue;
     try {
       // 8 candidats : le produit du commerçant n'est pas toujours dans le top 5
       // (le classement AliExpress varie selon l'IP et le moment).
-      const found = await source.search({ archetype, country: input.country, limit: 8 });
+      const found = await source.search({
+        archetype,
+        country: input.country,
+        limit: 8,
+        query: input.userText,
+      });
       candidates.push(...found);
     } catch (error) {
       warnings.push(`Source indisponible : ${source.name}`);

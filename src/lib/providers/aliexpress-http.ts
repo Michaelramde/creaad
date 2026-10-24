@@ -8,7 +8,7 @@
  * recherche répond normalement (~750 Ko). Constaté en production le 24/10.
  */
 import type { Archetype } from "../archetype/extract.ts";
-import { normalize } from "../matching/text.ts";
+import { normalize, tokenize } from "../matching/text.ts";
 import type { Attributes, ListingCandidate } from "../matching/types.ts";
 import { extractColorName, extractSize, parseVariantLabel } from "../matching/variant.ts";
 import type { SourceAdapter } from "./types.ts";
@@ -77,6 +77,21 @@ export function parseSearchItems(html: string): SearchItem[] {
   }
 }
 
+/**
+ * Requête de recherche : le texte du commerçant d'abord.
+ *
+ * Constaté sur « Sac Jeep 3 en 1 » : interroger le seul mot « sac » ramenait
+ * des sacs génériques, et l'appariement rejetait tout à juste titre (0/40).
+ * Les premiers mots utiles du texte portent la marque et le modèle.
+ */
+export function buildSearchQuery(archetype: Archetype, hint?: string): string {
+  const fromHint = hint ? tokenize(hint).slice(0, 4) : [];
+  if (fromHint.length >= 2) return fromHint.join(" ");
+
+  const fromArchetype = [archetype.noun, archetype.capacity].filter(Boolean).join(" ").trim();
+  return fromArchetype || archetype.label || "produit";
+}
+
 export class AliExpressHttpSource implements SourceAdapter {
   readonly name = "aliexpress-http";
 
@@ -88,11 +103,10 @@ export class AliExpressHttpSource implements SourceAdapter {
     archetype: Archetype;
     country: string;
     limit?: number;
+    query?: string;
   }): Promise<ListingCandidate[]> {
     const limit = input.limit ?? 5;
-    const query =
-      [input.archetype.noun, input.archetype.capacity].filter(Boolean).join(" ").trim() ||
-      input.archetype.label;
+    const query = buildSearchQuery(input.archetype, input.query);
 
     const html = await fetchHtml(
       `https://fr.aliexpress.com/w/wholesale-${encodeURIComponent(query.replace(/\s+/g, "-"))}.html`,

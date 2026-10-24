@@ -18,8 +18,9 @@ import { buildPlanStep, type PlanStepResult, type UserPhoto } from "./plan.ts";
 import type { Providers } from "../providers/types.ts";
 
 export interface RunAnalysisInput {
-  category: Category;
-  regime: Regime;
+  /** Catégorie de secours : le pipeline la déduit des photos et du texte. */
+  category?: Category;
+  regime?: Regime;
   country: string;
   photos: UserPhoto[];
   variantLabel?: string;
@@ -41,10 +42,11 @@ export async function runAnalysis(
   input: RunAnalysisInput,
 ): Promise<RunAnalysisResult> {
   const warnings: string[] = [];
+  const regime: Regime = input.regime ?? "non_detenu";
 
   const identify = await identifyArticle(providers, {
-    category: input.category,
-    regime: input.regime,
+    category: input.category ?? "beaute",
+    regime,
     country: input.country,
     imageUrls: input.photos.map((p) => p.url),
     variantLabel: input.variantLabel,
@@ -56,10 +58,14 @@ export async function runAnalysis(
     return { identify, warnings, blocked: true };
   }
 
+  // Catégorie réellement reconnue (texte + image) : elle pilote les vues
+  // requises et le ton des créas, pas le choix fait à la main.
+  const category = identify.archetype.category;
+
   /* ── planche ─────────────────────────────────────────────────────────── */
   const plan = await buildPlanStep(providers, {
-    category: input.category,
-    regime: input.regime,
+    category,
+    regime,
     photos: input.photos,
     labelOcrConfidence: identify.ocrConfidence,
     listingImages: identify.match.candidate?.images.map((i) => i.url) ?? [],
@@ -88,7 +94,7 @@ export async function runAnalysis(
     product: {
       title: identify.match.candidate?.title ?? input.userText ?? identify.archetype.label,
       archetype: identify.archetype.label,
-      category: input.category,
+      category,
       claims: input.userText ? [input.userText] : [],
       specs: [identify.archetype.capacity].filter((v): v is string => Boolean(v)),
       ...(variant?.colorName || variant?.capacity

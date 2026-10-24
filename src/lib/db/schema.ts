@@ -149,6 +149,11 @@ export const analyses = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     country: text("country").notNull(),
+    /** Photos du commerçant, gardées pour afficher le résultat même sans planche. */
+    photos: jsonb("photos")
+      .$type<{ url: string; width?: number; height?: number }[]>()
+      .notNull()
+      .default([]),
     status: text("status")
       .$type<
         | "creee"

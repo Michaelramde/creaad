@@ -2,23 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { Badge, Card, Kicker } from "@/components/ui";
+import { Kicker } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
-import { compressImage, formatBytes, type CompressedImage } from "@/lib/client/image";
-
-const CATEGORIES = [
-  { id: "beaute", label: "Beauté" },
-  { id: "cheveux", label: "Cheveux" },
-  { id: "mode", label: "Mode" },
-  { id: "gadgets", label: "Gadgets" },
-] as const;
-
-const REGIMES = [
-  { id: "detenu", label: "J'ai le produit en main" },
-  { id: "non_detenu", label: "Je ne l'ai pas encore" },
-] as const;
+import { compressImage, type CompressedImage } from "@/lib/client/image";
 
 const COUNTRIES = [
   { code: "CI", label: "Côte d'Ivoire" },
@@ -32,19 +20,35 @@ const COUNTRIES = [
 
 const MAX_PHOTOS = 6;
 
+/** Étapes du pipeline, dans l'ordre réel de leur exécution. */
+const STAGES = [
+  { at: 0, label: "Lecture des photos" },
+  { at: 5, label: "Recherche du produit" },
+  { at: 13, label: "Comparaison des annonces" },
+  { at: 20, label: "Construction de la planche" },
+  { at: 26, label: "Analyse du marché" },
+  { at: 32, label: "Rédaction des créas" },
+];
+
 export default function NewAnalysisPage() {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
 
-  const [category, setCategory] = useState<string>("beaute");
-  const [regime, setRegime] = useState<string>("non_detenu");
   const [country, setCountry] = useState("CI");
   const [userText, setUserText] = useState("");
-  const [variantLabel, setVariantLabel] = useState("");
   const [images, setImages] = useState<CompressedImage[]>([]);
   const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [needsTopup, setNeedsTopup] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!busy) return;
+    const started = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
+    return () => clearInterval(timer);
+  }, [busy]);
 
   async function onFiles(files: FileList | null) {
     if (!files) return;
@@ -61,22 +65,22 @@ export default function NewAnalysisPage() {
 
   async function submit() {
     if (images.length === 0) {
-      setError("Ajoute au moins une photo du produit.");
+      setError("Ajoute une photo du produit.");
       return;
     }
     setBusy(true);
+    setElapsed(0);
     setError(null);
     setNeedsTopup(false);
     try {
+      // La catégorie et le mode sont déduits par le moteur : le commerçant
+      // n'a rien à décider, il montre son produit.
       const res = await fetch("/api/analyses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          category,
-          regime,
           country,
           images: images.map((i) => ({ url: i.dataUrl, width: i.width, height: i.height })),
-          variantLabel: variantLabel.trim() || undefined,
           userText: userText.trim() || undefined,
         }),
       });
@@ -96,183 +100,181 @@ export default function NewAnalysisPage() {
     }
   }
 
-  if (isPending) return <Shell><p className="text-sm text-stone-500">Chargement…</p></Shell>;
+  if (isPending) return <p className="px-5 pt-10 text-sm text-stone-500">Chargement…</p>;
 
   if (!session) {
     return (
-      <Shell>
+      <main className="mx-auto max-w-md px-5 pb-20 pt-10">
         <h1 className="text-xl font-semibold">Connecte-toi d&apos;abord</h1>
-        <p className="mt-2 text-sm text-stone-600">
-          Un email suffit. Pas de SMS, pas de carte.
-        </p>
+        <p className="mt-2 text-sm text-stone-600">Un email suffit. Pas de SMS, pas de carte.</p>
         <Link
           href="/wallet"
           className="mt-6 block rounded-2xl bg-stone-900 px-5 py-4 text-center text-[15px] font-medium text-white"
         >
           Créer mon compte
         </Link>
-      </Shell>
+      </main>
     );
   }
 
+  if (busy) return <Progress elapsed={elapsed} />;
+
   return (
-    <Shell>
-      <Kicker>Nouvelle analyse</Kicker>
-      <h1 className="mt-1 text-xl font-semibold">Photographie ton produit</h1>
+    <main className="mx-auto max-w-md px-5 pb-24 pt-10">
+      <Kicker>Nouveau</Kicker>
+      <h1 className="mt-1 text-xl font-semibold">Montre ton produit</h1>
       <p className="mt-1 text-sm leading-relaxed text-stone-600">
-        {MAX_PHOTOS} photos maximum. Les images sont compressées sur ton téléphone avant
-        l&apos;envoi.
+        Une photo suffit pour commencer. Ajoute-en d&apos;autres (face, dos, étiquette) pour une
+        planche plus fidèle.
       </p>
 
-      <div className="mt-6 grid grid-cols-3 gap-2">
+      {/* Photos */}
+      <div className="mt-5 grid grid-cols-3 gap-2">
         {images.map((image, index) => (
           <div key={index} className="relative overflow-hidden rounded-xl border border-stone-200">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image.dataUrl} alt={`Photo ${index + 1}`} className="aspect-square w-full object-cover" />
+            <img src={image.dataUrl} alt="" className="aspect-square w-full object-cover" />
             <button
               type="button"
               onClick={() => setImages((prev) => prev.filter((_, i) => i !== index))}
-              className="absolute right-1 top-1 rounded-full bg-stone-900/80 px-1.5 py-0.5 text-[10px] text-white"
-              aria-label="Retirer cette photo"
+              className="absolute right-1 top-1 h-6 w-6 rounded-full bg-black/60 text-xs text-white"
+              aria-label="Retirer"
             >
-              ✕
+              ×
             </button>
-            <span className="absolute bottom-1 left-1 rounded bg-stone-900/70 px-1 text-[9px] text-white">
-              {formatBytes(image.bytes)}
-            </span>
           </div>
         ))}
 
         {images.length < MAX_PHOTOS && (
-          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-stone-300 text-center text-[11px] text-stone-500">
-            <span className="text-xl leading-none">+</span>
-            <span className="mt-1 px-1">Ajouter</span>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => void onFiles(e.target.files)}
-            />
-          </label>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="flex aspect-square w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-stone-300 bg-white text-stone-400 active:scale-[0.98]"
+          >
+            <span className="text-2xl leading-none">+</span>
+            <span className="mt-1 text-[10px]">Photo</span>
+          </button>
         )}
       </div>
 
-      <p className="mt-2 text-[11px] text-stone-400">
-        En démonstration, les photos restent sur cet appareil et ne sont pas stockées.
-      </p>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(event) => void onFiles(event.target.files)}
+      />
 
-      <div className="mt-6 space-y-4">
-        <Field label="Catégorie">
-          <Chips options={CATEGORIES} value={category} onChange={setCategory} />
-        </Field>
+      {/* Nom du produit — le seul champ qui améliore vraiment le résultat */}
+      <label className="mt-5 block">
+        <span className="text-xs font-medium text-stone-600">Nom du produit</span>
+        <input
+          value={userText}
+          onChange={(event) => setUserText(event.target.value)}
+          placeholder="ex. Sac Jeep 3 en 1"
+          className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-3 text-sm outline-none focus:border-stone-900"
+        />
+        <span className="mt-1 block text-[11px] text-stone-400">
+          Facultatif, mais c&apos;est ce qui aide le plus à trouver le bon modèle.
+        </span>
+      </label>
 
-        <Field label="Le produit">
-          <Chips options={REGIMES} value={regime} onChange={setRegime} />
-        </Field>
-
-        <Field label="Marché visé">
-          <select
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            className="w-full rounded-xl border border-stone-300 bg-white px-3 py-3 text-sm"
-          >
-            {COUNTRIES.map((c) => (
-              <option key={c.code} value={c.code}>{c.label}</option>
-            ))}
-          </select>
-        </Field>
-
-        <Field label="Nom du produit (optionnel)">
-          <input
-            value={userText}
-            onChange={(e) => setUserText(e.target.value)}
-            placeholder="Sérum vitamine C 30 ml"
-            className="w-full rounded-xl border border-stone-300 px-3 py-3 text-sm"
-          />
-        </Field>
-
-        <Field label="Variante (optionnel)">
-          <input
-            value={variantLabel}
-            onChange={(e) => setVariantLabel(e.target.value)}
-            placeholder="Jaune, 30 ml"
-            className="w-full rounded-xl border border-stone-300 px-3 py-3 text-sm"
-          />
-          <p className="mt-1 text-[11px] text-stone-400">
-            Une seule variante par analyse : c&apos;est ce qui garantit la fidélité de la planche.
-          </p>
-        </Field>
-      </div>
+      <label className="mt-4 block">
+        <span className="text-xs font-medium text-stone-600">Où tu vends</span>
+        <select
+          value={country}
+          onChange={(event) => setCountry(event.target.value)}
+          className="mt-1 w-full rounded-xl border border-stone-300 bg-white px-3 py-3 text-sm outline-none focus:border-stone-900"
+        >
+          {COUNTRIES.map((item) => (
+            <option key={item.code} value={item.code}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
       {needsTopup && (
-        <Card className="mt-4 border-amber-200 bg-amber-50">
-          <p className="text-sm font-medium">Solde insuffisant</p>
-          <p className="mt-1 text-xs text-stone-700">
-            Une analyse coûte 1 crédit. Recharge ton wallet pour lancer celle-ci.
-          </p>
-          <Link href="/wallet" className="mt-2 inline-block text-xs font-medium underline">
-            Recharger
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-medium">Il te faut une analyse pour lancer celle-ci.</p>
+          <Link href="/wallet" className="mt-2 block text-sm font-medium text-amber-900 underline">
+            Recharger mon wallet
           </Link>
-        </Card>
+        </div>
       )}
 
       <button
         type="button"
-        disabled={busy || images.length === 0}
         onClick={() => void submit()}
+        disabled={images.length === 0}
         className="mt-6 w-full rounded-2xl bg-stone-900 px-5 py-4 text-[15px] font-medium text-white disabled:opacity-40"
       >
-        {busy ? "Identification en cours…" : "Lancer l'analyse"}
+        Lancer l&apos;analyse
       </button>
 
-      <p className="mt-2 text-center text-[11px] text-stone-500">
-        Le crédit n&apos;est débité qu&apos;à la livraison des kits.
+      <p className="mt-3 text-center text-[11px] text-stone-400">
+        Aucun débit si le produit n&apos;est pas reconnu.
       </p>
-    </Shell>
+    </main>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto max-w-md px-5 pb-16 pt-10">{children}</main>;
-}
+function Progress({ elapsed }: { elapsed: number }) {
+  const current = STAGES.reduce((acc, stage, index) => (elapsed >= stage.at ? index : acc), 0);
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <p className="mb-1.5 text-xs font-medium text-stone-700">{label}</p>
-      {children}
-    </div>
-  );
-}
+    <main className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-6 py-16">
+      <div className="flex items-center gap-3">
+        <span className="relative flex h-9 w-9 items-center justify-center">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-stone-900 opacity-20" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-stone-900" />
+        </span>
+        <div>
+          <p className="text-sm font-medium">Analyse en cours</p>
+          <p className="text-xs tabular-nums text-stone-500">{elapsed} s</p>
+        </div>
+      </div>
 
-function Chips({
-  options,
-  value,
-  onChange,
-}: {
-  options: readonly { id: string; label: string }[];
-  value: string;
-  onChange: (id: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          onClick={() => onChange(option.id)}
-          className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition ${
-            value === option.id
-              ? "bg-stone-900 text-white ring-stone-900"
-              : "bg-white text-stone-600 ring-stone-300"
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
+      <ol className="mt-8 space-y-3">
+        {STAGES.map((stage, index) => {
+          const done = index < current;
+          const active = index === current;
+          return (
+            <li key={stage.label} className="flex items-center gap-3">
+              <span
+                className={
+                  done
+                    ? "flex h-5 w-5 items-center justify-center rounded-full bg-stone-900 text-[10px] text-white"
+                    : active
+                      ? "flex h-5 w-5 items-center justify-center rounded-full border-2 border-stone-900"
+                      : "flex h-5 w-5 items-center justify-center rounded-full border border-stone-300"
+                }
+              >
+                {done ? "✓" : ""}
+              </span>
+              <span
+                className={
+                  done
+                    ? "text-sm text-stone-400 line-through"
+                    : active
+                      ? "text-sm font-medium text-stone-900"
+                      : "text-sm text-stone-400"
+                }
+              >
+                {stage.label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      <p className="mt-8 text-xs leading-relaxed text-stone-400">
+        Les photos sont lues, le produit comparé aux annonces, puis la planche et les angles sont
+        construits. Compte une trentaine de secondes.
+      </p>
+    </main>
   );
 }

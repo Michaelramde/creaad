@@ -17,8 +17,10 @@ import { getWalletSummary, releaseAnalysis, reserveForAnalysis, settleAnalysis }
 const imageUrl = z.union([z.url(), z.string().startsWith("data:image/").max(4_000_000)]);
 
 const bodySchema = z.object({
-  category: z.enum(["beaute", "cheveux", "mode", "gadgets"]),
-  regime: z.enum(["detenu", "non_detenu"]),
+  // Catégorie et mode ne sont plus demandés : le moteur les déduit des photos
+  // et du nom saisi. Ils restent acceptés pour les appels programmatiques.
+  category: z.enum(["beaute", "cheveux", "mode", "gadgets"]).optional(),
+  regime: z.enum(["detenu", "non_detenu"]).optional(),
   country: z.string().length(2).default("CI"),
   images: z
     .array(
@@ -65,8 +67,10 @@ export async function POST(req: Request) {
     .insert(products)
     .values({
       userId: session.user.id,
-      category: input.category,
-      regime: input.regime,
+      // Valeurs provisoires : la catégorie réelle est déduite pendant
+      // l'identification et enregistrée sur l'analyse (archetypeSlug).
+      category: input.category ?? "beaute",
+      regime: input.regime ?? "non_detenu",
       name: input.userText ?? null,
       variantLabel: input.variantLabel ?? null,
     })
@@ -79,6 +83,7 @@ export async function POST(req: Request) {
       productId: product.id,
       userId: session.user.id,
       country: input.country,
+      photos: input.images,
       status: "ocr",
       reservedXof: wallet.creditXof,
     })
@@ -94,8 +99,8 @@ export async function POST(req: Request) {
   try {
     const providers = createProviders();
     const result = await runAnalysis(providers, {
-      category: input.category,
-      regime: input.regime,
+      ...(input.category ? { category: input.category } : {}),
+      ...(input.regime ? { regime: input.regime } : {}),
       country: input.country,
       photos: input.images,
       variantLabel: input.variantLabel,

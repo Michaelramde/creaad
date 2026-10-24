@@ -5,14 +5,14 @@ import { notFound, redirect } from "next/navigation";
 
 import { ConfirmArticle } from "@/components/confirm-article";
 import { CopyButton } from "@/components/copy-button";
-import { Badge, Card, Kicker, ScoreBar, type Tone } from "@/components/ui";
+import { Badge, Card, Kicker, type Tone } from "@/components/ui";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { analyses, archetypes, creativeKits, marketKits, planImages, plans } from "@/lib/db/schema";
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
   livree: { label: "Kits livrés", tone: "ok" },
-  bloquee_article: { label: "Article non identifié", tone: "warn" },
+  bloquee_article: { label: "Produit non identifié", tone: "warn" },
   planche_prete: { label: "Planche incomplète", tone: "warn" },
   echouee: { label: "Échec", tone: "risk" },
   ocr: { label: "En cours", tone: "muted" },
@@ -42,6 +42,14 @@ interface PortfolioEntry {
   figures: { ads: number; advertisers: number; medianDaysRunning: number };
 }
 
+interface StoredMatch {
+  score?: number;
+  accepted?: boolean;
+  candidate?: { title?: string; url?: string; images?: { url: string }[] };
+  components?: Record<string, { points: number; max: number; evidence: boolean; detail: string }>;
+  gateReason?: string;
+}
+
 export default async function AnalysisPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/wallet");
@@ -56,7 +64,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   if (!row) notFound();
 
   const status = STATUS[row.status] ?? { label: row.status, tone: "muted" as Tone };
-  const blockedArticle = row.status === "bloquee_article";
+  const match = (row.matchResult ?? null) as StoredMatch | null;
+  const photos = (row.photos ?? []).map((p) => p.url);
 
   const [plan] = await db
     .select()
@@ -91,7 +100,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   } | null;
 
   let portfolio: PortfolioEntry[] | null = null;
-  let marketMeta: { adsFound: number; advertisers: number; confidence: string } | null = null;
+  let marketMeta: { adsFound: number; confidence: string } | null = null;
 
   if (row.archetypeSlug) {
     const [archetype] = await db
@@ -101,43 +110,94 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       .limit(1);
 
     if (archetype) {
-      const [kit] = await db
+      const [cache] = await db
         .select()
         .from(marketKits)
         .where(and(eq(marketKits.archetypeId, archetype.id), eq(marketKits.country, row.country)))
         .limit(1);
 
-      if (kit) {
-        const content = kit.content as { portfolio?: { entries?: PortfolioEntry[] } };
+      if (cache) {
+        const content = cache.content as { portfolio?: { entries?: PortfolioEntry[] } };
         portfolio = content.portfolio?.entries ?? null;
-        marketMeta = {
-          adsFound: kit.adsFound,
-          advertisers: 0,
-          confidence: kit.confidence,
-        };
+        marketMeta = { adsFound: cache.adsFound, confidence: cache.confidence };
       }
     }
   }
 
+  const identified = match?.accepted === true;
+  const candidateImage = match?.candidate?.images?.[0]?.url ?? null;
+
   return (
     <main className="mx-auto max-w-md px-5 pb-20 pt-10">
-      <Kicker>Analyse</Kicker>
-      <div className="mt-1 flex items-start justify-between gap-3">
-        <h1 className="text-xl font-semibold">
-          {row.archetypeSlug ? row.archetypeSlug.replace(/-/g, " ") : "Produit"}
-        </h1>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Kicker>Analyse</Kicker>
+          <h1 className="mt-1 text-xl font-semibold capitalize">
+            {row.archetypeSlug ? row.archetypeSlug.replace(/-/g, " ") : "Produit"}
+          </h1>
+        </div>
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
 
-      {/* Identification */}
-      <Card className="mt-5">
-        <div className="flex items-end justify-between">
-          <div>
-            <p className="text-3xl font-semibold tabular-nums">{row.matchScore ?? "—"}</p>
-            <p className="text-xs text-stone-500">Produit reconnu / 100</p>
-          </div>
+      {/* Les photos du commerçant, toujours visibles */}
+      {photos.length > 0 && (
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+          {photos.map((url, index) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={index}
+              src={url}
+              alt=""
+              className="h-20 w-20 shrink-0 rounded-xl border border-stone-200 object-cover"
+            />
+          ))}
         </div>
-      </Card>
+      )}
+
+      {/* Verdict */}
+      <div className="mt-4 flex items-center gap-4 rounded-2xl border border-stone-200 bg-white p-4">
+        <ScoreRing value={row.matchScore ?? 0} tone={identified ? "ok" : "warn"} />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">
+            {identified ? "Produit retrouvé" : "Produit non retrouvé"}
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-stone-500">
+            {identified ? explainScore(match) : explainFailure(match)}
+          </p>
+        </div>
+      </div>
+
+      {/* Le produit réellement comparé */}
+      {match?.candidate?.title && (
+        <Card className="mt-3 flex gap-3">
+          {candidateImage && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={candidateImage}
+              alt=""
+              className="h-16 w-16 shrink-0 rounded-xl border border-stone-200 object-cover"
+            />
+          )}
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-wide text-stone-400">
+              {identified ? "Produit de référence" : "Le plus proche trouvé"}
+            </p>
+            <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-stone-700">
+              {match.candidate.title}
+            </p>
+            {match.candidate.url && (
+              <a
+                href={match.candidate.url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-block text-[11px] text-stone-500 underline"
+              >
+                Voir l&apos;annonce
+              </a>
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* 1 · Montrer */}
       {plan && (
@@ -158,11 +218,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
               {images.map((image) => (
                 <figure key={image.id} className="overflow-hidden rounded-xl border border-stone-200">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={image.url}
-                    alt={image.slot}
-                    className="aspect-square w-full object-cover"
-                  />
+                  <img src={image.url} alt={image.slot} className="aspect-square w-full object-cover" />
                   <figcaption className="px-1.5 py-1 text-[10px] text-stone-500">
                     {image.slot.replace("-", " ")}
                   </figcaption>
@@ -237,7 +293,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             ))}
           </div>
 
-          {kit.scripts && kit.scripts.length > 0 && kit.scripts[0] && (
+          {kit.scripts?.[0] && (
             <Card className="mt-2">
               <Kicker>
                 Script {kit.scripts[0].durationS} s · {kit.scripts[0].format}
@@ -255,7 +311,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             </Card>
           )}
 
-          {kit.imagePrompts && kit.imagePrompts.length > 0 && kit.imagePrompts[0] && (
+          {kit.imagePrompts?.[0] && (
             <details className="mt-2 rounded-2xl border border-stone-200 bg-white p-4">
               <summary className="cursor-pointer text-xs font-medium text-stone-700">
                 Prompt d&apos;image ({kit.imagePrompts.length})
@@ -268,22 +324,21 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         </section>
       )}
 
-      {blockedArticle && (
+      {!identified && row.status === "bloquee_article" && (
         <Card className="mt-4 border-amber-200 bg-amber-50">
           <p className="text-sm font-medium">Aucun débit n&apos;a été effectué</p>
           <p className="mt-1 text-xs leading-relaxed text-stone-700">
-            Le produit n&apos;a pas pu être confirmé automatiquement. La réservation de crédit a
-            été intégralement restituée.
+            Le produit n&apos;a pas pu être confirmé. {advice(match)}
           </p>
           <ConfirmArticle analysisId={row.id} />
         </Card>
       )}
 
-      {row.status === "planche_prete" && (
+      {row.status === "planche_prete" && plan && (
         <Card className="mt-4 border-amber-200 bg-amber-50">
           <p className="text-sm font-medium">Aucun débit n&apos;a été effectué</p>
           <p className="mt-1 text-xs leading-relaxed text-stone-700">
-            La planche est incomplète : reprends les photos manquantes puis relance.
+            Il manque des vues du produit. Reprends les photos manquantes, puis relance.
           </p>
         </Card>
       )}
@@ -309,12 +364,68 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         >
           Analyser un autre produit
         </Link>
-        <Link href="/demo" className="block text-center text-xs text-stone-500 underline">
-          Voir un kit complet de démonstration
+        <Link href="/historique" className="block text-center text-xs text-stone-500 underline">
+          Mes analyses
         </Link>
       </div>
     </main>
   );
+}
+
+/** Anneau de score : un chiffre seul ne dit rien. */
+function ScoreRing({ value, tone }: { value: number; tone: "ok" | "warn" }) {
+  const radius = 26;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = Math.max(0, Math.min(100, value)) / 100;
+
+  return (
+    <div className="relative h-16 w-16 shrink-0">
+      <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+        <circle cx="32" cy="32" r={radius} fill="none" stroke="#e7e5e4" strokeWidth="6" />
+        <circle
+          cx="32"
+          cy="32"
+          r={radius}
+          fill="none"
+          stroke={tone === "ok" ? "#1c1917" : "#b45309"}
+          strokeWidth="6"
+          strokeLinecap="round"
+          strokeDasharray={`${circumference * ratio} ${circumference}`}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold tabular-nums">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function explainScore(match: StoredMatch | null): string {
+  const visual = match?.components?.visual;
+  const text = match?.components?.ocr;
+  if (visual && visual.points > visual.max * 0.6) return "La photo et l'annonce montrent bien le même produit.";
+  if (text && text.points > text.max * 0.6) return "Le nom du produit correspond à l'annonce trouvée.";
+  return "Correspondance confirmée par les attributs du produit.";
+}
+
+function explainFailure(match: StoredMatch | null): string {
+  const visual = match?.components?.visual;
+  const text = match?.components?.ocr;
+  if (visual && visual.evidence && visual.points < visual.max * 0.3)
+    return "Les annonces trouvées ne montrent pas ce produit.";
+  if (text && text.evidence && text.points < text.max * 0.3)
+    return "Le nom du produit ne correspond pas aux annonces.";
+  return "Les preuves recueillies ne suffisent pas à confirmer le produit.";
+}
+
+function advice(match: StoredMatch | null): string {
+  const visual = match?.components?.visual;
+  const text = match?.components?.ocr;
+  if (visual && visual.evidence && visual.points < visual.max * 0.3)
+    return "Précise le nom exact du modèle (marque + type) : c'est ce qui guide la recherche.";
+  if (text && text.evidence && text.points < text.max * 0.3)
+    return "Ajoute une photo de l'étiquette ou le nom exact du produit.";
+  return "Reprends les photos à la lumière du jour, en montrant le produit entier.";
 }
 
 /** Version texte du kit, pour la coller dans un autre outil. */
