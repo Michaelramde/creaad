@@ -113,6 +113,19 @@ export class AliExpressHttpSource implements SourceAdapter {
     const limit = input.limit ?? 5;
     const query = buildSearchQuery(input.archetype, input.query);
 
+    /**
+     * « produit » n'est pas une requête.
+     *
+     * Sans nom saisi et sans texte lu sur l'emballage, l'archétype retombe sur
+     * « produit » : interroger AliExpress avec ce mot ramène des articles au
+     * hasard (constaté en production le 26/10 : des sacs en toile pour hommes
+     * comparés à un sac à main en cuir), et coûte plusieurs secondes de
+     * comparaison visuelle avant un refus. Mieux vaut ne rien chercher et
+     * laisser l'index visuel travailler seul.
+     */
+    const plain = normalize(query).trim();
+    if (plain.length < 3 || plain === "produit") return [];
+
     const html = await fetchHtml(
       `https://fr.aliexpress.com/w/wholesale-${encodeURIComponent(query.replace(/\s+/g, "-"))}.html`,
     );
