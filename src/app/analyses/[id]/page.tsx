@@ -759,9 +759,21 @@ function explainFailure(match: StoredMatch | null): string {
 function advice(match: StoredMatch | null): string {
   const visual = match?.components?.visual;
   const text = match?.components?.ocr;
+
+  /**
+   * Le vrai manque est souvent l'absence de TEXTE, pas la qualité des photos.
+   *
+   * Cas vécu le 26/10 : une photo nette, sans nom saisi et sans étiquette
+   * lisible → 37/100, plafond atteignable 60. Conseiller « reprends les
+   * photos » envoyait le commerçant dans une impasse. Sans texte, l'OCR ne
+   * peut rien apporter et le seuil de 70 devient inatteignable.
+   */
+  if (!text || text.evidence === false)
+    return "Ajoute le nom du produit dans le champ « Nom du produit » (ou une photo de l'étiquette) : sans texte, l'appariement ne peut pas dépasser 60/100.";
+
   if (visual && visual.evidence && visual.points < visual.max * 0.3)
     return "Précise le nom exact du modèle (marque + type) : c'est ce qui guide la recherche.";
-  if (text && text.evidence && text.points < text.max * 0.3)
+  if (text.points < text.max * 0.3)
     return "Ajoute une photo de l'étiquette ou le nom exact du produit.";
   return "Reprends les photos à la lumière du jour, en montrant le produit entier.";
 }

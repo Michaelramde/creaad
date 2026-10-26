@@ -79,7 +79,7 @@ export class GeminiVisualComparator implements VisualComparator {
     if (userImages.length > 0) {
       parts.push({ text: "PRODUIT DE RÉFÉRENCE :" });
       for (const url of userImages.slice(0, 3)) {
-        const inline = await toInlinePart(url).catch(() => null);
+        const inline = await toInlinePart(url, { maxPx: 640 }).catch(() => null);
         if (inline) parts.push(inline);
       }
     }
@@ -88,10 +88,14 @@ export class GeminiVisualComparator implements VisualComparator {
       text: `DESCRIPTION FOURNIE PAR LE COMMERÇANT : "${userText.slice(0, 600)}"`,
     });
 
-    for (const candidate of candidates.slice(0, 8)) {
+    /**
+     * Cinq candidats suffisent : le classement en retient un, et le 6ᵉ ne
+     * change jamais la décision. Huit coûtaient 15 s par analyse.
+     */
+    for (const candidate of candidates.slice(0, 5)) {
       parts.push({ text: `CANDIDAT ${candidate.id} — titre : "${candidate.title.slice(0, 300)}"` });
       if (candidate.imageUrl) {
-        const inline = await toInlinePart(candidate.imageUrl).catch(() => null);
+        const inline = await toInlinePart(candidate.imageUrl, { maxPx: 640 }).catch(() => null);
         if (inline) parts.push(inline);
       }
     }

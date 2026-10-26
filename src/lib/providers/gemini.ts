@@ -47,18 +47,70 @@ interface InlinePart {
   inline_data: { mime_type: string; data: string };
 }
 
-export async function toInlinePart(url: string): Promise<InlinePart> {
+/**
+ * Prépare une image pour un appel multimodal.
+ *
+ * Deux protections apprises en production le 26/10 :
+ *  · **délai d'attente** — sans lui, une image candidate dont le CDN ne répond
+ *    pas bloquait la fonction jusqu'à la coupure de la plateforme ;
+ *  · **redimensionnement** — comparer 8 vignettes en pleine résolution coûtait
+ *    15 s par analyse. À 640 px, la comparaison de forme est identique.
+ *
+ * `maxPx` reste optionnel : l'OCR et le classement des vues ont besoin de la
+ * résolution d'origine.
+ */
+export async function toInlinePart(
+  url: string,
+  options: { maxPx?: number; timeoutMs?: number } = {},
+): Promise<InlinePart> {
   if (url.startsWith("data:")) {
     const match = /^data:([^;]+);base64,(.*)$/s.exec(url);
     if (!match) throw new Error("Data URL malformée");
-    return { inline_data: { mime_type: match[1] as string, data: match[2] as string } };
+    return shrink({ inline_data: { mime_type: match[1] as string, data: match[2] as string } }, options.maxPx);
   }
 
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(options.timeoutMs ?? 15_000),
+  });
   if (!res.ok) throw new Error(`Image inaccessible (HTTP ${res.status})`);
   const buffer = Buffer.from(await res.arrayBuffer());
   const mime = res.headers.get("content-type") ?? "image/jpeg";
-  return { inline_data: { mime_type: mime.split(";")[0] as string, data: buffer.toString("base64") } };
+
+  return shrink(
+    { inline_data: { mime_type: mime.split(";")[0] as string, data: buffer.toString("base64") } },
+    options.maxPx,
+  );
+}
+
+/** Réduit une image avant envoi. Silencieux si `sharp` est indisponible. */
+async function shrink(part: InlinePart, maxPx?: number): Promise<InlinePart> {
+  if (!maxPx) return part;
+
+  try {
+    const mod = (await import("sharp")) as unknown as { default?: unknown };
+    const sharp = (mod.default ?? mod) as (input: Buffer) => {
+      metadata: () => Promise<{ width?: number; height?: number }>;
+      resize: (opts: { width: number; height: number; fit: string }) => {
+        jpeg: (opts: { quality: number }) => { toBuffer: () => Promise<Buffer> };
+      };
+    };
+
+    const input = Buffer.from(part.inline_data.data, "base64");
+    const meta = await sharp(input).metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    if (width <= maxPx && height <= maxPx) return part;
+
+    const resized = await sharp(input)
+      .resize({ width: maxPx, height: maxPx, fit: "inside" })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    return { inline_data: { mime_type: "image/jpeg", data: resized.toString("base64") } };
+  } catch {
+    return part;
+  }
 }
 
 interface GeminiResponse {
@@ -268,7 +320,7 @@ export class GeminiAttributeProvider implements AttributeProvider {
   async describe(imageUrls: readonly string[]): Promise<Attributes> {
     if (imageUrls.length === 0) return {};
 
-    const parts = await Promise.all(imageUrls.slice(0, 4).map(toInlinePart));
+    const parts = await Promise.all(imageUrls.slice(0, 4).map((url) => toInlinePart(url)));
     const raw = await generate(
       this.apiKey,
       this.model,

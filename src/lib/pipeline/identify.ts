@@ -197,17 +197,29 @@ export async function identifyArticle(  providers: Providers,
   /* 5 — Appariement. */
   let assessments: Map<string, { visual: number; text: number }> | undefined;
   if (providers.visual && candidates.length > 0) {
-    // Même raisonnement : un comparateur en panne ne doit pas se traduire
-    // par « produit non reconnu ».
-    assessments = await providers.visual.compare(
-      input.imageUrls,
-      corpus,
-      candidates.map((c) => ({
-        id: c.externalId,
-        imageUrl: c.images[0]?.url,
-        title: c.title,
-      })),
-    );
+    /**
+     * Un comparateur en panne **ne doit pas** faire échouer l'analyse.
+     *
+     * Le commentaire précédent affirmait cette intention, mais l'appel n'était
+     * pas protégé : le 26/10 en production, un dépassement de délai côté
+     * modèle a transformé un blocage légitime (« produit non reconnu », crédit
+     * rendu) en échec technique (« echouee »). On dégrade : sans notes de
+     * vision, l'appariement retombe sur les embeddings et le texte.
+     */
+    try {
+      assessments = await providers.visual.compare(
+        input.imageUrls,
+        corpus,
+        candidates.map((c) => ({
+          id: c.externalId,
+          imageUrl: c.images[0]?.url,
+          title: c.title,
+        })),
+      );
+    } catch (error) {
+      warnings.push("Comparaison visuelle indisponible — appariement sur les autres preuves.");
+      console.warn("[identify] comparateur visuel en échec", error);
+    }
   }
 
   /**
