@@ -303,10 +303,17 @@ interface ProductKit {
 
 | Composante | Poids | Mesure |
 |---|---|---|
-| Similarité visuelle du produit | 40 | cosinus SigLIP entre photos utilisateur et images du listing |
-| Correspondance OCR | 25 | recouvrement marque / label / mots-clés |
-| Correspondance attributs | 20 | couleur, forme, catégorie, matériau |
-| Cohérence de variante | 15 | couleur + taille + capacité |
+| Similarité visuelle du produit | **55** | jugement du modèle de vision, sinon cosinus d'embeddings |
+| Correspondance OCR | **20** | recouvrement marque / label / mots-clés |
+| Correspondance attributs | **15** | couleur, forme, catégorie, matériau |
+| Cohérence de variante | **10** | couleur + taille + capacité |
+
+> **Rebarémo du 26/10.** Avec 40/25/20/15, un produit sans nom saisi et sans
+> étiquette lisible — un produit générique, cas majoritaire — plafonnait à
+> **60/100** pour un seuil de 70 : le texte était devenu une condition
+> obligatoire sans que ce soit écrit. Le visuel pèse désormais 55 : une
+> correspondance jugée quasi certaine (≥ 0,85) avec attributs concordants
+> atteint 70 et passe sans aucun texte. En dessous, on refuse toujours.
 
 **Seuil = 70.** En dessous : analyse `BLOQUEE_ARTICLE`, **aucun débit**, l'utilisateur confirme ou ressaisit.
 Le top-5 des candidats est obtenu par embeddings ; **seuls 5 candidats** passent au re-rank VLM.

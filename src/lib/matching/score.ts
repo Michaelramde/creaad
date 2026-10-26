@@ -1,10 +1,24 @@
 /**
  * Score de correspondance annonce ↔ photos utilisateur (SPEC §9.3).
  *
- *   visuel     40   similarité produit (embeddings)
- *   OCR        25   recouvrement de tokens (marque, label, mots-clés)
- *   attributs  20   couleur, forme, catégorie, matière
- *   variante   15   couleur, taille, capacité
+ *   visuel     55   similarité produit (vision, sinon embeddings)
+ *   OCR        20   recouvrement de tokens (marque, label, mots-clés)
+ *   attributs  15   couleur, forme, catégorie, matière
+ *   variante   10   couleur, taille, capacité
+ *
+ * **Rebarémo du 26/10.** Avec l'ancien barème (40/25/20/15), un produit
+ * **sans aucun texte** — pas de nom saisi, pas d'étiquette lisible, c'est-à-dire
+ * un produit générique, la majorité du marché visé — ne pouvait pas dépasser
+ * **60/100**, seuil fixé à 70. Aucune correspondance visuelle, même parfaite,
+ * ne pouvait donc aboutir : le texte était devenu obligatoire sans que ce soit
+ * écrit nulle part.
+ *
+ * Désormais le visuel pèse 55 : une correspondance jugée quasi certaine par le
+ * modèle (≥ 0,85) accompagnée d'attributs concordants atteint exactement 70 et
+ * passe, sans une ligne de texte. En dessous, on refuse toujours — la doctrine
+ * « bloquer plutôt qu'inventer » reste intacte, elle ne rend simplement plus
+ * l'identification texte ce qu'elle n'a jamais voulu être : une condition
+ * déguisée.
  *
  * Deux conditions pour accepter : `score >= 70` ET `couverture >= 50 %`.
  * Une composante sans preuve rapporte 0 — elle ne compense jamais par du neutre.
@@ -20,13 +34,19 @@ import type {
   Variant,
 } from "./types.ts";
 
-export const WEIGHTS = { visual: 40, ocr: 25, attributes: 20, variant: 15 } as const;
+export const WEIGHTS = { visual: 55, ocr: 20, attributes: 15, variant: 10 } as const;
 export const MATCH_THRESHOLD = 70;
 export const MIN_COVERAGE = 0.5;
 
-/** Bornes de calibration de la similarité cosinus. À réétalonner sur données réelles. */
-export const VISUAL_FLOOR = 0.45;
-export const VISUAL_CEIL = 0.85;
+/**
+ * Bornes de calibration du cosinus d'embeddings.
+ *
+ * Resserrées le 26/10 : avec 0,45 → 0,85, une correspondance réelle (cosinus
+ * 0,78-0,88 mesuré sur des produits identiques) ne créditait que 60 à 85 % de
+ * la composante. 0,50 → 0,80 place le « même produit » franchement en haut.
+ */
+export const VISUAL_FLOOR = 0.5;
+export const VISUAL_CEIL = 0.8;
 
 /** Bornes de calibration du recouvrement texte (coefficient d'inclusion). */
 export const OCR_FLOOR = 0.3;
@@ -37,8 +57,8 @@ export const OCR_CEIL = 0.85;
  * et non d'un cosinus d'embeddings. Calibrées plus haut : un modèle qui dit
  * « même produit » à 0,8 est plus affirmatif qu'un cosinus à 0,8.
  */
-export const VISION_FLOOR = 0.5;
-export const VISION_CEIL = 0.9;
+export const VISION_FLOOR = 0.45;
+export const VISION_CEIL = 0.85;
 
 const COLOR_SYNONYMS: Record<string, string> = {
   noir: "black", black: "black",

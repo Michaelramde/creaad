@@ -769,7 +769,7 @@ function advice(match: StoredMatch | null): string {
    * peut rien apporter et le seuil de 70 devient inatteignable.
    */
   if (!text || text.evidence === false)
-    return "Ajoute le nom du produit dans le champ « Nom du produit » (ou une photo de l'étiquette) : sans texte, l'appariement ne peut pas dépasser 60/100.";
+    return "Ajoute le nom du produit dans le champ « Nom du produit » (ou une photo de l'étiquette) : sans texte, seule une correspondance visuelle quasi certaine peut aboutir.";
 
   if (visual && visual.evidence && visual.points < visual.max * 0.3)
     return "Précise le nom exact du modèle (marque + type) : c'est ce qui guide la recherche.";
