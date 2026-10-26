@@ -20,6 +20,8 @@ export interface BuildPlanInput {
   labelOcrConfidence?: number;
   /** Similarité inter-vues estimée (0 → 1). */
   consistency?: number;
+  /** Qualité mesurée des visuels (netteté + fond), 0 → 1. */
+  imageQuality?: number;
 }
 
 export interface PlanResult {
@@ -48,6 +50,7 @@ export function buildPlan(input: BuildPlanInput): PlanResult {
     images: selection.assignments.map((a) => a.image),
     labelOcrConfidence: input.labelOcrConfidence ?? 0,
     hasMacroLabel: selection.filled.includes("macro-label"),
+    ...(input.imageQuality !== undefined ? { imageQuality: input.imageQuality } : {}),
   });
 
   return {

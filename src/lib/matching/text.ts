@@ -10,6 +10,10 @@ const STOPWORDS = new Set([
 /** Minuscules, sans accents, sans ponctuation, espaces normalisés. */
 export function normalize(input: string): string {
   return input
+    // NFKC d'abord : les annonces utilisent des caractères mathématiques
+    // (𝐋𝐄, 𝟒.𝟗𝟗𝟗) que NFD laisse intacts et que le filtre ASCII supprimait
+    // entièrement — le texte devenait vide, donc « non classé ».
+    .normalize("NFKC")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()

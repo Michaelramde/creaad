@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { BUILD_STAGES, ProgressScreen } from "@/components/progress-screen";
+import { WaitingScreen } from "@/components/waiting-screen";
 import type { VariantAxis } from "@/lib/products/types";
 
 /**
@@ -78,10 +78,9 @@ export function VariantPicker({
 
   if (busy) {
     return (
-      <ProgressScreen
+      <WaitingScreen
         title="Construction des kits"
-        stages={BUILD_STAGES}
-        note="La planche est bâtie à partir de la galerie du coloris choisi, puis le marché du produit est interrogé. Les créas arrivent juste après — tu peux rester sur cette page."
+        note="La planche est bâtie à partir de la galerie du coloris choisi, puis le marché et les créas sont produits. La page se met à jour d'elle-même — tu peux rester ici."
       />
     );
   }

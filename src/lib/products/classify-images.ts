@@ -15,7 +15,7 @@
  * portent un tableau de mesures. Les jeter ferait perdre les dimensions ;
  * les traiter comme des packshots polluerait la galerie.
  */
-import { generate, toInlinePart } from "../providers/gemini.ts";
+import { DEFAULT_GEMINI_MODEL, generate, toInlinePart } from "../providers/gemini.ts";
 
 export type ImageType = "packshot" | "scene" | "spec" | "marketing" | "sans_produit";
 
@@ -135,10 +135,10 @@ export async function classifyImages(input: {
     if (positions.length === 0) continue;
 
     try {
-      const raw = await generate(input.apiKey, input.model ?? "gemini-3.5-flash", parts, {
+      const raw = await generate(input.apiKey, input.model ?? DEFAULT_GEMINI_MODEL, parts, {
         responseMimeType: "application/json",
         temperature: 0,
-      });
+      }, { step: "classify-images" });
 
       for (const entry of extractArray(raw)) {
         const item = entry as {

@@ -609,3 +609,64 @@ et le parcours UI de J1 restent à construire.
 La migration est écrite à la main (`drizzle/0000_init.sql`) pour garder la main sur
 les contraintes `CHECK` et sur l'**index unique partiel** `(provider, provider_txn_id)
 WHERE provider_txn_id IS NOT NULL`, qui porte l'idempotence du crédit.
+
+---
+
+## 19. Mise à jour du 25 octobre 2026 — écart SPEC ↔ code résorbé
+
+> Cette section **corrige** les sections antérieures. Elle fait foi là où elle contredit le texte ci-dessus.
+
+### Étapes du pipeline
+
+La section §4.3 décrivait 16 états. **7 n'avaient ni producteur ni consommateur** :
+`reservee`, `capture`, `moisson`, `en_attente_validation`, `recherche_marche`, `marche_pret`,
+`production`. Ils sont retirés (migration `0019`). Les 9 états réels :
+
+```
+creee → ocr → appariement → variante_a_choisir ─┐
+                        ├─ bloquee_article      │
+                        ├─ planche_prete        │
+                        └─ produit_pret ────────┴→ livree
+                                    (tout état) → echouee
+```
+
+### Orchestration
+
+§8 décrivait un pipeline Inngest en 14 étapes. En réalité : une fonction asynchrone, exécutée
+dans `after()` après une réponse **202**, avec deux jalons de progression écrits en base
+(`ocr`, `appariement`). Inngest n'est utilisé nulle part.
+
+### Stockage des images
+
+§5 imposait R2 présigné. C'est désormais le cas (`POST /api/uploads/presign`), avec repli base64
+déclaré quand `R2_PUBLIC_URL` est absent.
+
+### Facturation de l'étape 2
+
+§12 ne le prévoyait pas : **l'étape 2 n'est pas débitée** si la matrice de marché n'est pas
+publiable, et coûte **500 FCFA** (au lieu de 1 000) quand ce marché est déjà calculé.
+Le re-run gratuit 7 jours (§12.3) est implémenté.
+
+### Score de fidélité
+
+§9.4 : 50 / 25 / 25 (couverture / résolution / texte) **et** un facteur de qualité mesurée
+(netteté, uniformité du fond) borné à `0,7 → 1,0`, qui ne peut que baisser le score.
+
+### Classification des angles
+
+§10.2 supposait un classifieur fiable. Mesure sur 24 annonces réelles : **29 %** de précision
+pour les règles de mots-clés. Le modèle étiquette désormais (cache permanent dans `hook_labels`),
+les règles ne servant que de repli (75 %).
+
+### État vérifié
+
+| Élément | Valeur mesurée le 25/10 |
+|---|---|
+| Taux de livraison complète | **31,7 %** (19/60 analyses terminées) |
+| Blocage article | 35 % |
+| Planche refusée | 21,7 % |
+| Tests unitaires | **193**, plus une CI bloquante |
+| Coût réel par recherche d'image | 0,00895 $ (et non 0,02 $ ni 0,101 $) |
+| Coût réel par fiche produit | 0,05000 $ |
+
+Voir [`docs/METRIQUES-2026-10.md`](./docs/METRIQUES-2026-10.md) et [`docs/ADR.md`](./docs/ADR.md).

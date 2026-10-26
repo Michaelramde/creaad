@@ -6,12 +6,47 @@
  * (`POST /api/analyses/:id/variante`). Sans ça, la logique de débit et de
  * livraison existerait en double — et divergerait.
  */
-import { eq } from "drizzle-orm";
+import { and, eq, gte, inArray, ne } from "drizzle-orm";
 
 import { putMarketKit } from "../cache/store.ts";
 import { db } from "../db/index.ts";
-import { analyses, creativeKits, planImages, plans } from "../db/schema.ts";
+import { analyses, creativeKits, planImages, plans, products } from "../db/schema.ts";
 import { ensureArchetype } from "../market/store.ts";
+
+/**
+ * Renseigne enfin `products.archetype_id`.
+ *
+ * La colonne existait depuis la migration 0000 et n'avait **jamais** été
+ * écrite : la jointure réelle passait par `analyses.archetype_slug`, une
+ * chaîne. On garde le slug pour l'affichage, et on remplit la vraie clé
+ * étrangère pour que le produit sache à quel marché il appartient.
+ */
+async function linkProductArchetype(input: {
+  analysisId: string;
+  slug: string;
+  category: "beaute" | "cheveux" | "mode" | "gadgets";
+}): Promise<void> {
+  try {
+    const archetypeId = await ensureArchetype({
+      slug: input.slug,
+      label: input.slug.replace(/-/g, " "),
+      category: input.category,
+    });
+
+    const [row] = await db
+      .select({ productId: analyses.productId })
+      .from(analyses)
+      .where(eq(analyses.id, input.analysisId))
+      .limit(1);
+
+    if (row) {
+      await db.update(products).set({ archetypeId }).where(eq(products.id, row.productId));
+    }
+  } catch (error) {
+    // Un lien manquant ne doit pas faire échouer une analyse livrée.
+    console.warn("[persist] rattachement de l'archétype impossible", error);
+  }
+}
 import { releaseAnalysis, settleAnalysis } from "../wallet/repo.ts";
 import type { RunAnalysisResult } from "./run-analysis.ts";
 
@@ -162,19 +197,51 @@ export async function persistAnalysisOutcome(ctx: PersistContext): Promise<Persi
 
   /* ── 4. Étape 1 : le dossier produit s'arrête ici ─────────────────────── */
   if (ctx.phase === "produit") {
-    await settleAnalysis({
-      userId,
-      analysisId,
-      reservedXof: creditXof,
-      actualXof: creditXof,
-      step: 1,
-    });
+    /**
+     * Re-run gratuit 7 jours.
+     *
+     * La SPEC §12.3 le promettait et rien ne l'implémentait. Si ce commerçant
+     * a déjà reçu un dossier pour CE produit il y a moins de sept jours, la
+     * seconde analyse ne coûte rien : refaire ses photos ne se facture pas
+     * deux fois.
+     */
+    const reRunProductRef = result.product?.record.productId;
+    let freeRerun = false;
+
+    if (reRunProductRef) {
+      const [previous] = await db
+        .select({ id: analyses.id })
+        .from(analyses)
+        .where(
+          and(
+            eq(analyses.userId, userId),
+            eq(analyses.productRef, reRunProductRef),
+            ne(analyses.id, analysisId),
+            inArray(analyses.status, ["livree", "produit_pret"]),
+            gte(analyses.createdAt, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)),
+          ),
+        )
+        .limit(1);
+      freeRerun = Boolean(previous);
+    }
+
+    if (freeRerun) {
+      await releaseAnalysis({ userId, analysisId, reservedXof: creditXof, step: 1 });
+    } else {
+      await settleAnalysis({
+        userId,
+        analysisId,
+        reservedXof: creditXof,
+        actualXof: creditXof,
+        step: 1,
+      });
+    }
 
     await db
       .update(analyses)
       .set({
         status: result.blocked ? "planche_prete" : "produit_pret",
-        settledXof: result.blocked ? 0 : creditXof,
+        settledXof: result.blocked || freeRerun ? 0 : creditXof,
         failureCode: result.blocked ? (plan?.plan.fidelity.gate ?? "PLAN_REFUSED") : null,
         matchScore: result.product ? 95 : result.identify.match.score,
         matchCoverage: result.identify.match.coverage.toFixed(2),
@@ -200,12 +267,18 @@ export async function persistAnalysisOutcome(ctx: PersistContext): Promise<Persi
       })
       .where(eq(analyses.id, analysisId));
 
+    await linkProductArchetype({
+      analysisId,
+      slug: result.identify.archetype.slug,
+      category: result.identify.archetype.category,
+    });
+
     // Planche refusée : on restitue, l'étape n'a pas été livrée.
     if (result.blocked) await releaseAnalysis({ userId, analysisId, reservedXof: creditXof, step: 1 });
 
     return {
       status: result.blocked ? "planche_prete" : "produit_pret",
-      charged: !result.blocked,
+      charged: !result.blocked && !freeRerun,
       payload: {
         analysisId,
         status: result.blocked ? "planche_prete" : "produit_pret",
@@ -221,7 +294,8 @@ export async function persistAnalysisOutcome(ctx: PersistContext): Promise<Persi
         facts: result.product?.facts ?? {},
         plan: summarizePlan(plan),
         warnings: result.warnings,
-        charged: !result.blocked,
+        charged: !result.blocked && !freeRerun,
+        freeRerun,
       },
     };
   }
@@ -310,6 +384,12 @@ export async function persistAnalysisOutcome(ctx: PersistContext): Promise<Persi
       prompts: result.creative.kit.imagePrompts.length,
     };
   }
+
+  await linkProductArchetype({
+    analysisId,
+    slug: result.identify.archetype.slug,
+    category: result.identify.archetype.category,
+  });
 
   /* ── 7. Livraison + débit ─────────────────────────────────────────────── */
   await settleAnalysis({ userId, analysisId, reservedXof: creditXof, actualXof: creditXof });

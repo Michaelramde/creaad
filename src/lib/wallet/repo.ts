@@ -11,6 +11,7 @@ import {
   InsufficientFundsError,
   releaseEntries,
   remainingAnalyses,
+  refundEntries,
   reservationEntries,
   settleEntries,
 } from "./core";
@@ -190,6 +191,19 @@ export async function settleAnalysis(input: {
     settleEntries(input.analysisId, input.reservedXof, input.actualXof, input.step ?? 1),
   );
   return { balance };
+}
+
+/** Rembourse une analyse livrée dont le produit a été reconnu faux. */
+export async function refundAnalysis(input: {
+  userId: string;
+  analysisId: string;
+  amountXof: number;
+}): Promise<{ balance: number; refunded: boolean }> {
+  const { balance, posted } = await postEntries(
+    input.userId,
+    refundEntries(input.analysisId, input.amountXof),
+  );
+  return { balance, refunded: posted.length > 0 };
 }
 
 /** Échec : restitution intégrale. Le commerçant n'a rien payé. */

@@ -49,6 +49,12 @@ git push -u origin main
 | `MISTRAL_API_KEY` | optionnel (OCR payant, plus dense) |
 | `APIFY_TOKEN` | optionnel (sources) |
 | `NEXT_PUBLIC_CREDIT_XOF` | `1000` |
+| `NEXT_PUBLIC_CREDIT_XOF_CACHED` | `500` — étape 2 quand le marché est déjà calculé |
+| `CREDIT_XOF_CACHED` | `500` — même valeur, côté serveur |
+| `ADMIN_EMAILS` | ton email — sans lui, `/admin/metrics` répond **404** |
+| `R2_PUBLIC_URL` | `https://pub-xxxx.r2.dev` — sans lui, les photos repartent en base64 |
+| `GEMINI_PAID` | `0` — passer à `1` le jour où le palier gratuit est dépassé |
+| `APIFY_DAILY_CAP_USD` | `1` par défaut — **à relever** avant la mise en marché |
 | `MIN_TOPUP_XOF` | `5000` |
 
 ⚠️ **`APP_URL` doit correspondre exactement** au domaine servi (schéma et sous-domaine
@@ -98,6 +104,8 @@ HTTPS est provisionné automatiquement (Let's Encrypt) dès que le DNS répond.
 ```bash
 curl -s https://creaad.site/api/wallet          # doit répondre 401 UNAUTHENTICATED
 curl -s -X POST https://creaad.site/api/webhooks/geniuspay -d '{}'   # doit répondre 401
+curl -s https://creaad.site/api/health | jq .ok                     # doit être true
+curl -s -o /dev/null -w "%{http_code}" https://creaad.site/admin/metrics  # 404 si ADMIN_EMAILS vide
 ```
 
 - `https://creaad.site/` → page d'accueil

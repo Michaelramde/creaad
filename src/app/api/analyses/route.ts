@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { headers } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
@@ -9,13 +9,15 @@ import { analyses, products } from "@/lib/db/schema";
 import { persistAnalysisOutcome } from "@/lib/pipeline/persist";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
 import { createProviders } from "@/lib/providers";
+import { checkAnalysisLimit } from "@/lib/rate-limit";
 import { getWalletSummary, releaseAnalysis, reserveForAnalysis } from "@/lib/wallet/repo";
+
+export const maxDuration = 300;
 
 /** Accepte une URL distante (R2, CDN) ou une image inline. */
 const imageUrl = z.union([z.url(), z.string().startsWith("data:image/").max(4_000_000)]);
 
 const bodySchema = z.object({
-  // Catégorie et mode ne sont plus demandés : le moteur les déduit.
   category: z.enum(["beaute", "cheveux", "mode", "gadgets"]).optional(),
   regime: z.enum(["detenu", "non_detenu"]).optional(),
   country: z.string().length(2).default("CI"),
@@ -39,6 +41,17 @@ function publicPhotoUrl(request: Request, analysisId: string): string {
   return `${origin}/api/photos/${analysisId}/0`;
 }
 
+/**
+ * Création d'une analyse.
+ *
+ * **Réponse 202 en moins d'une seconde.** Le pipeline (30-55 s) s'exécute
+ * après la réponse, dans `after()` : la plateforme ne coupe plus la fonction
+ * au milieu d'un appel Apify déjà payé, et le navigateur n'attend plus
+ * trente secondes devant un écran figé.
+ *
+ * La progression réelle est écrite en base (`ocr` → `appariement`) ; la page
+ * de résultat la lit et se rafraîchit toute seule.
+ */
 export async function POST(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
@@ -48,6 +61,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "BAD_REQUEST", issues: parsed.error.issues }, { status: 400 });
   }
   const input = parsed.data;
+
+  const quota = await checkAnalysisLimit(session.user.id);
+  if (!quota.allowed) {
+    return NextResponse.json(
+      {
+        error: "RATE_LIMITED",
+        message: `${quota.max} analyses par heure maximum. Réessaie dans un moment.`,
+        used: quota.used,
+        max: quota.max,
+      },
+      { status: 429, headers: { "Retry-After": "3600" } },
+    );
+  }
 
   const wallet = await getWalletSummary(session.user.id);
   if (!wallet.canLaunch) {
@@ -87,59 +113,61 @@ export async function POST(req: Request) {
     .returning();
   if (!analysis) return NextResponse.json({ error: "ANALYSIS_CREATE_FAILED" }, { status: 500 });
 
-  await reserveForAnalysis({
+  const reserved = await reserveForAnalysis({
     userId: session.user.id,
     analysisId: analysis.id,
     amountXof: wallet.creditXof,
   });
 
-  try {
-    const providers = createProviders();
-    const result = await runAnalysis(providers, {
-      ...(input.category ? { category: input.category } : {}),
-      ...(input.regime ? { regime: input.regime } : {}),
-      country: input.country,
-      photos: input.images,
-      variantLabel: input.variantLabel,
-      userText: input.userText,
-      publicImageUrl: publicPhotoUrl(req, analysis.id),
-      analysisId: analysis.id,
-    });
-
-    const outcome = await persistAnalysisOutcome({
-      analysisId: analysis.id,
-      userId: session.user.id,
-      country: input.country,
-      creditXof: wallet.creditXof,
-      // Étape 1 uniquement : l'étude de marché reste une seconde demande
-      // facturée. Sans coloris à choisir, l'analyse s'arrête ici aussi.
-      phase: "produit",
-      result,
-    });
-
-    return NextResponse.json(outcome.payload);
-  } catch (error) {
-    await releaseAnalysis({
-      userId: session.user.id,
-      analysisId: analysis.id,
-      reservedXof: wallet.creditXof,
-    });
-    await db
-      .update(analyses)
-      .set({ status: "echouee", failureCode: "PIPELINE_FAILED", updatedAt: new Date() })
-      .where(eq(analyses.id, analysis.id));
-
-    console.error("[analyses] pipeline échoué", error);
-
-    const saturated = /429|503|quota|high demand|timeout/i.test(String(error));
-    return NextResponse.json(
-      {
-        error: "PIPELINE_FAILED",
-        message: saturated
-          ? "Le service d'analyse est momentanément saturé. Réessaie dans une minute — aucun crédit n'a été débité."
-          : "L'analyse a échoué. Aucun crédit n'a été débité.",
-      },
-      { status: 503 },
-    );
+  if (!reserved.debited) {
+    // Rejeu immédiat : la réservation existait déjà, on ne relance pas.
+    return NextResponse.json({ analysisId: analysis.id, status: analysis.status }, { status: 202 });
   }
+
+  const analysisId = analysis.id;
+  const userId = session.user.id;
+  const country = input.country;
+
+  after(async () => {
+    try {
+      const providers = createProviders();
+      const result = await runAnalysis(providers, {
+        ...(input.category ? { category: input.category } : {}),
+        ...(input.regime ? { regime: input.regime } : {}),
+        country,
+        photos: input.images,
+        variantLabel: input.variantLabel,
+        userText: input.userText,
+        publicImageUrl: publicPhotoUrl(req, analysisId),
+        analysisId,
+        onStage: async (stage) => {
+          await db
+            .update(analyses)
+            .set({ status: stage, updatedAt: new Date() })
+            .where(eq(analyses.id, analysisId));
+        },
+      });
+
+      await persistAnalysisOutcome({
+        analysisId,
+        userId,
+        country,
+        creditXof: wallet.creditXof,
+        phase: "produit",
+        result,
+      });
+    } catch (error) {
+      // Une exception dans after() ne doit jamais laisser un crédit bloqué.
+      await releaseAnalysis({ userId, analysisId, reservedXof: wallet.creditXof }).catch(() => undefined);
+      await db
+        .update(analyses)
+        .set({ status: "echouee", failureCode: "PIPELINE_FAILED", updatedAt: new Date() })
+        .where(eq(analyses.id, analysisId))
+        .catch(() => undefined);
+
+      console.error("[analyses] pipeline échoué", error);
+    }
+  });
+
+  return NextResponse.json({ analysisId, status: "ocr", reserved: wallet.creditXof }, { status: 202 });
 }

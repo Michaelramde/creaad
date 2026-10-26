@@ -1,8 +1,10 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { productRecords } from "@/lib/db/schema";
+import { analyses, productRecords } from "@/lib/db/schema";
 import {
   buildDossierMarkdown,
   dossierFiles,
@@ -21,8 +23,25 @@ export const maxDuration = 300;
  * `?coloris=a,b` restreint aux coloris donnes ; sans parametre, tout part.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  /**
+   * Cette route servait n'importe quelle fiche produit à qui connaissait un
+   * identifiant AliExpress — titre, prix, specs, avis, 37 images, et un
+   * téléchargement d'images côté serveur. Elle exige désormais une session
+   * ET la preuve que l'appelant a une analyse sur ce produit.
+   */
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
+
   const { id } = await params;
   const selected = new URL(req.url).searchParams.get("coloris")?.split(",").filter(Boolean);
+
+  const [owned] = await db
+    .select({ id: analyses.id })
+    .from(analyses)
+    .where(and(eq(analyses.productRef, id), eq(analyses.userId, session.user.id)))
+    .limit(1);
+
+  if (!owned) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   const [record] = await db
     .select()

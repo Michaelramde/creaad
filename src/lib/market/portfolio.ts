@@ -8,6 +8,7 @@
  * L'angle « prouvé et omniprésent » n'est jamais écarté : on différencie
  * l'exécution, on n'abandonne pas ce qui convertit.
  */
+import { MARKET } from "./saturation.ts";
 import type { AngleFamily, AngleStats, SaturationMatrix } from "./types.ts";
 
 export type RecommendedAction =
@@ -81,7 +82,7 @@ export function buildPortfolio(matrix: SaturationMatrix): Portfolio {
       publishable: false,
       message:
         `Données insuffisantes : ${matrix.dataQuality.adsFound} annonces exploitables ` +
-        `(minimum ${15}). Aucune carte n'est publiée plutôt que d'en inventer une.`,
+        `(minimum ${MARKET.minAdsArchetype}). Aucune carte n'est publiée plutôt que d'en inventer une.`,
       entries: [],
       whiteSpace: [],
       watchlist: [],

@@ -79,7 +79,7 @@ npm run dev
 
 | Commande | Rôle |
 |---|---|
-| `npm test` | 116 tests unitaires |
+| `npm test` | 193 tests unitaires |
 | `npm run test:integration` | 16 vérifications contre Neon |
 | `npm run test:e2e` | paiement GeniusPay sandbox de bout en bout |
 | `npm run test:e2e:webhook` | webhook signé contre la production |
@@ -105,8 +105,9 @@ npm run dev
 
 | | |
 |---|---|
-| Tests | 122 unitaires · 16 intégration · 2 e2e |
+| Tests | **193** unitaires · 16 intégration · 2 e2e · **CI bloquante** (typage + tests + build) |
 | Collecte marché | 118 annonces réelles, 4 archétypes, automatique toutes les 6 h |
+| **Taux de livraison mesuré** | **31,7 %** des analyses terminées (19 livrées / 60) · blocage article **35 %** · planche refusée **21,7 %** · échecs techniques **11,7 %** |
 | Paiement | recharge → webhook signé → crédit → kits (validé en production) |
 
 ---
@@ -117,12 +118,30 @@ npm run dev
 - **Quota Gemini gratuit** : ~4 appels par analyse, et les quotas sont **par modèle** — une chaîne de repli (`flash-lite`) prend le relais quand le principal est saturé.
 - **AliExpress** : la page *produit* est bloquée depuis les IP datacenter ; seuls les résultats de la page de *recherche* sont lisibles (titre, image, prix). C'est suffisant pour l'appariement, pas pour un enrichissement profond.
 - **Verbatims clients** : les avis ne sont pas encore extraits.
-- **Exports** : copie texte uniquement (pas de PDF/ZIP).
+- **Exports** : copie texte + un ZIP (fiche Markdown + images). Pas de PDF ni de planche-image.
+- **PWA** : le manifeste annoncé n'existe pas encore (404) — l'app n'est pas installable.
 - **TikTok** : non branché — l'écosystème open source est trop ancien.
 
 ---
 
+## Pilotage (août–octobre 2026)
+
+Le produit mesure désormais ce qu'il livre, pas seulement ce qu'il dépense.
+
+| Outil | Rôle |
+|---|---|
+| `/admin/metrics` | funnel, taux de livraison, coût par livraison, couverture des archétypes (protégé par `ADMIN_EMAILS`) |
+| `GET /api/health` | sonde : base, modèle de génération, **modèle d'embedding** (sans repli), jeton Apify |
+| `npm run costs` | coût réel par étape, lu dans `pipeline_costs` — l'arbitre des chiffres contradictoires |
+| `npm run eval:hooks` | distribution des familles d'angles sur les annonces réellement collectées |
+| `v_funnel`, `v_costs`, `v_cost_per_delivery` | les mêmes agrégats en SQL, pour le runbook (migration 0017) |
+
+`pipeline_costs` journalise maintenant **Gemini** (tokens + modèle) et les **frais GeniusPay**, pas seulement Apify.
+
 ## Documentation
+
+- [`docs/ADR.md`](./docs/ADR.md) — six décisions d'architecture, et ce qui a été écarté
+- [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) — six incidents, et quoi faire
 
 - [`SPEC.md`](./SPEC.md) — spécification complète (contrats, scoring, saturation, wallet)
 - [`DEPLOY.md`](./DEPLOY.md) — GitHub → Vercel → `creaad.site`

@@ -202,6 +202,7 @@ export async function enrichMarket(input: {
         ...(input.reviewSourceUrl ? { reviewSourceUrl: input.reviewSourceUrl } : {}),
         product: input.product,
       }),
+      { step: "market-enrich" },
     );
 
     const parsed = JSON.parse(extractJson(raw)) as RawEnrichment;

@@ -76,11 +76,14 @@ export default function DemoPage() {
           </div>
 
           <div className="mt-4 space-y-2.5">
-            <ScoreBar label="Couverture des vues" value={product.fidelity.breakdown.coverage} max={30} />
-            <ScoreBar label="Résolution" value={product.fidelity.breakdown.resolution} max={20} />
-            <ScoreBar label="Cohérence inter-vues" value={product.fidelity.breakdown.consistency} max={15} />
-            <ScoreBar label="Lisibilité du label" value={product.fidelity.breakdown.text} max={15} />
-            <ScoreBar label="Sources distinctes" value={product.fidelity.breakdown.consensus} max={20} />
+            {/* Barème réellement mesuré : on n'affiche que ce qui est noté. */}
+            <ScoreBar label="Couverture des vues" value={product.fidelity.breakdown.coverage} max={50} />
+            <ScoreBar label="Résolution" value={product.fidelity.breakdown.resolution} max={25} />
+            <ScoreBar label="Lisibilité du label" value={product.fidelity.breakdown.text} max={25} />
+            <p className="pt-1 text-[11px] leading-relaxed text-stone-500">
+              {product.fidelity.breakdown.distinctSources} sources distinctes (information d&apos;audit,
+              non notée).
+            </p>
           </div>
 
           <p className="mt-4 border-t border-stone-100 pt-3 text-xs leading-relaxed text-stone-500">

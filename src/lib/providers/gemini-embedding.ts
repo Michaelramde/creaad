@@ -6,6 +6,7 @@
  * Évalué le 24/10 : 11 premiers voisins corrects sur 12, familles séparées
  * (sac↔sac 0,78-0,88 contre sac↔sérum ~0,61).
  */
+import { logPipelineCost } from "../costs.ts";
 import type { Embedding } from "../matching/types.ts";
 
 export const EMBEDDING_MODEL = "gemini-embedding-2";
@@ -78,6 +79,17 @@ export async function embedImage(
   const payload = (await res.json()) as { embedding?: { values?: number[] } };
   const values = payload.embedding?.values;
   if (!values || values.length === 0) throw new Error("Embedding vide");
+
+  // Le palier gratuit rend l'appel gratuit, pas invisible : on compte les appels.
+  void logPipelineCost({
+    step: "embedding",
+    provider: "gemini",
+    model,
+    costUsd: 0,
+    estimated: true,
+    tokensIn: values.length,
+  });
+
   return remember(url, values);
 }
 

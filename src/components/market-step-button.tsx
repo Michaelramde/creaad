@@ -3,16 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { ProgressScreen, type Stage } from "@/components/progress-screen";
-
-/** Étapes de l'étude de marché — la seconde demande, facturée séparément. */
-const MARKET_STAGES: Stage[] = [
-  { at: 0, label: "Lecture du marché de ce type de produit" },
-  { at: 4, label: "Recherche des annonces du produit" },
-  { at: 14, label: "Élargissement aux pays voisins" },
-  { at: 30, label: "Analyse des avis d'acheteurs" },
-  { at: 45, label: "Désirs, objections et angles" },
-];
+import { WaitingScreen } from "@/components/waiting-screen";
 
 /**
  * Seconde demande : l'étude de marché.
@@ -24,10 +15,13 @@ export function MarketStepButton({
   analysisId,
   creditXof,
   disabled,
+  cached = false,
 }: {
   analysisId: string;
   creditXof: number;
   disabled?: boolean;
+  /** Marché déjà calculé pour ce type de produit : tarif réduit. */
+  cached?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -53,10 +47,9 @@ export function MarketStepButton({
 
   if (busy) {
     return (
-      <ProgressScreen
+      <WaitingScreen
         title="Étude de marché"
-        stages={MARKET_STAGES}
-        note="Les annonces des concurrents sont cherchées pays par pays, puis élargies. Les avis d'acheteurs sont ensuite analysés pour en tirer les désirs et les objections."
+        note="Les annonces des concurrents sont cherchées pays par pays, puis élargies ; les avis d'acheteurs servent ensuite à dégager les désirs et les objections. Rien n'est débité si les données sont insuffisantes."
       />
     );
   }
@@ -82,8 +75,14 @@ export function MarketStepButton({
       >
         Lancer l&apos;étude — {creditXof} FCFA
       </button>
+      {cached && (
+        <p className="mt-2 text-center text-[11px] text-emerald-800">
+          Marché déjà étudié pour ce type de produit : tarif réduit.
+        </p>
+      )}
       <p className="mt-2 text-center text-[11px] text-stone-400">
-        Débité une fois, quand le rapport est prêt.
+        Débité une fois, quand le rapport est prêt. Rien n&apos;est débité si les
+        données sont insuffisantes.
       </p>
     </section>
   );

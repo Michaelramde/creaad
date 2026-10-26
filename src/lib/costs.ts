@@ -11,6 +11,12 @@ import { db } from "./db/index.ts";
 import { pipelineCosts } from "./db/schema.ts";
 import { env } from "./env.ts";
 
+/**
+ * Conversion utilisée pour ramener des frais en FCFA dans une colonne en USD.
+ * Indicative : le XOF est arrimé à l'euro (655,957), pas au dollar.
+ */
+export const XOF_PER_USD = 600;
+
 export interface CostEntry {
   analysisId?: string;
   step: string;
@@ -22,6 +28,8 @@ export interface CostEntry {
   estimated?: boolean;
   /** Identifiant d'exécution chez le fournisseur (réconciliation). */
   externalId?: string;
+  tokensIn?: number;
+  tokensOut?: number;
 }
 
 export async function logPipelineCost(entry: CostEntry): Promise<void> {
@@ -35,6 +43,8 @@ export async function logPipelineCost(entry: CostEntry): Promise<void> {
       durationMs: entry.durationMs ?? null,
       estimated: entry.estimated ?? false,
       externalId: entry.externalId ?? null,
+      tokensIn: entry.tokensIn ?? null,
+      tokensOut: entry.tokensOut ?? null,
     });
   } catch (error) {
     // La comptabilité ne doit jamais faire échouer une analyse.

@@ -48,6 +48,12 @@ export interface SourceAdapter {
   }): Promise<ListingCandidate[]>;
 }
 
+/** Lecture unique des photos : OCR + attributs en un appel. */
+export interface ReaderProvider {
+  readonly name: string;
+  read(imageUrls: readonly string[]): Promise<{ ocr: OcrResult[]; attributes: Attributes }>;
+}
+
 export interface ProviderStatus {
   ocr: string;
   attributes: string;
@@ -57,6 +63,8 @@ export interface ProviderStatus {
 
 /** Ensemble des fournisseurs injectés dans le pipeline. */
 export interface Providers {
+  /** Lecture groupée (préférée quand disponible). */
+  reader?: ReaderProvider;
   ocr: OcrProvider;
   attributes: AttributeProvider;
   embeddings: EmbeddingProvider;
@@ -78,10 +86,10 @@ export interface Providers {
       slots: readonly { id: string; label: string }[],
     ): Promise<Map<number, string | null>>;
   };
-  /** Rédacteur du kit production. */
+  /** Rédacteur du kit production (méta : nomme l'étape dans pipeline_costs). */
   writer?: {
     readonly name: string;
-    write(prompt: string): Promise<string>;
+    write(prompt: string, meta?: { step?: string; analysisId?: string }): Promise<string>;
   };
   /** Chaîne d'identification payante (recherche par image + fiche + fournisseurs). */
   productPipeline?: import("../pipeline/identify-product.ts").ProductPipeline;

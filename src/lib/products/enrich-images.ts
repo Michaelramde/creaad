@@ -13,16 +13,13 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { productRecords } from "../db/schema.ts";
 import type { PoolImage, ProductRecord, VariantAxis } from "./types.ts";
+
 import { classifyImages } from "./classify-images.ts";
 
 export interface ClassifyOutcome {
   classified: number;
   total: number;
   alreadyDone: boolean;
-}
-
-function hasClassification(images: readonly PoolImage[]): boolean {
-  return images.some((image) => Boolean(image.kind));
 }
 
 export async function classifyProductRecord(
@@ -39,7 +36,18 @@ export async function classifyProductRecord(
   if (!record) return { classified: 0, total: 0, alreadyDone: false };
 
   const images = record.images as PoolImage[];
-  if (hasClassification(images)) {
+
+  /**
+   * Classement **incrémental** : on ne retraite que ce qui n'a pas encore de
+   * nature. L'ancien code sortait dès qu'UNE image était classée, et
+   * réécrivait toutes les autres — y compris celles déjà classées, dont il
+   * perdait les champs.
+   */
+  const pending = images
+    .map((image, index) => ({ image, index }))
+    .filter((entry) => !entry.image.kind);
+
+  if (pending.length === 0) {
     return { classified: 0, total: images.length, alreadyDone: true };
   }
 
@@ -52,26 +60,33 @@ export async function classifyProductRecord(
 
   const verdicts = await classifyImages({
     apiKey,
-    urls: images.map((image) => image.url),
+    urls: pending.map((entry) => entry.image.url),
     colours,
     ...(model ? { model } : {}),
   });
 
-  const updated = images.map((image, index) => {
-    const base: Record<string, unknown> = { url: image.url, origin: image.origin };
-    if (image.width !== undefined) base.width = image.width;
-    if (image.height !== undefined) base.height = image.height;
+  const updated = [...images];
 
-    const verdict = verdicts.get(index);
-    if (!verdict) return { ...base, kind: "sans_produit" };
+  for (const [local, entry] of pending.entries()) {
+    const verdict = verdicts.get(local);
+    /**
+     * ⚠️ Absence de verdict ≠ « sans produit ».
+     *
+     * L'ancien code écrivait « sans_produit » quand le modèle ne répondait pas
+     * (429, timeout) : les images disparaissaient de la galerie et de l'export,
+     * définitivement, parce que le job ne repassait jamais. On laisse désormais
+     * l'image non classée — elle reste visible, et le prochain passage la
+     * reprend.
+     */
+    if (!verdict) continue;
 
-    return {
-      ...base,
+    updated[entry.index] = {
+      ...entry.image,
       kind: verdict.type,
       ...(verdict.variantValueId ? { variantValueId: verdict.variantValueId } : {}),
       ...(verdict.hasTechnicalText ? { technicalText: true } : {}),
     };
-  });
+  }
 
   await db
     .update(productRecords)

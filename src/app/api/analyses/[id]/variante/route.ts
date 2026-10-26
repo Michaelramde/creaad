@@ -6,13 +6,13 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { analyses } from "@/lib/db/schema";
+import { env } from "@/lib/env";
 import { persistAnalysisOutcome } from "@/lib/pipeline/persist";
 import { runAnalysis } from "@/lib/pipeline/run-analysis";
 import { createProviders } from "@/lib/providers";
-import { getFreshRecord } from "@/lib/products/records";
 import { classifyProductRecord } from "@/lib/products/enrich-images";
-import { env } from "@/lib/env";
 import { validateSelection } from "@/lib/products/images";
+import { getFreshRecord } from "@/lib/products/records";
 import { releaseAnalysis } from "@/lib/wallet/repo";
 
 export const maxDuration = 300;
@@ -25,9 +25,13 @@ const bodySchema = z.object({
 /**
  * Reprise après choix du coloris.
  *
- * La fiche produit est en cache : cet appel ne repaie rien. Seule la suite du
- * pipeline (planche, marché, production) est exécutée, puis le crédit réservé
- * est débité si les kits sont livrés.
+ * Réponse 202 immédiate, comme la création : la fiche produit est en cache,
+ * donc rien n'est repayé, mais la construction de la planche et du marché dure
+ * des dizaines de secondes. La suite s'exécute dans after(), la progression
+ * réelle est écrite en base, et la page de résultat se rafraîchit d'elle-même.
+ *
+ * Avant : la requête attendait 30-60 s en affichant des étapes inventées.
+ * Un timeout coupait la fonction au milieu du travail.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -65,70 +69,75 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json(
       {
         error: "UNKNOWN_VARIANT",
-        message: `Ce coloris n'existe pas chez ce fournisseur : ${check.unknown.join(", ")}`,
+        message: `Ce coloris n’existe pas chez ce fournisseur : ${check.unknown.join(", ")}`,
       },
       { status: 400 },
     );
   }
 
-  try {
-    const providers = createProviders();
-    const result = await runAnalysis(providers, {
-      country: analysis.country,
-      photos: analysis.photos,
-      productRef: analysis.productRef,
-      variantSelection: parsed.data.selection,
-      analysisId: analysis.id,
-    });
+  const analysisId = analysis.id;
+  const userId = session.user.id;
+  const country = analysis.country;
+  const reservedXof = analysis.reservedXof ?? 0;
+  const productRef = analysis.productRef;
+  const photos = analysis.photos;
+  const selection = parsed.data.selection;
 
-    const outcome = await persistAnalysisOutcome({
-      analysisId: analysis.id,
-      userId: session.user.id,
-      country: analysis.country,
-      creditXof: analysis.reservedXof ?? 0,
-      phase: "produit",
-      result,
-    });
+  // État « en vol » : la page de résultat affiche la progression réelle.
+  await db
+    .update(analyses)
+    .set({ status: "ocr", updatedAt: new Date() })
+    .where(eq(analyses.id, analysisId));
 
-    /**
-     * Étape 1 terminée : le dossier produit est livré et débité.
-     * L' étude de marché est une **seconde demande**, facturée séparément,
-     * déclenchée par `POST /api/analyses/:id/marche`.
-     */
-    /**
-     * Le classement des images tourne maintenant : c'est lui qui relie chaque
-     * photo à un coloris. Sans lui, cocher un coloris ne changerait rien à
-     * l'export. ~90 s pour 40 images, apres la reponse.
-     */
-    if (record && env.GEMINI_API_KEY) {
-      after(async () => {
+  after(async () => {
+    try {
+      const providers = createProviders();
+      const result = await runAnalysis(providers, {
+        country,
+        photos,
+        productRef,
+        variantSelection: selection,
+        analysisId,
+        onStage: async (stage) => {
+          await db
+            .update(analyses)
+            .set({ status: stage, updatedAt: new Date() })
+            .where(eq(analyses.id, analysisId));
+        },
+      });
+
+      await persistAnalysisOutcome({
+        analysisId,
+        userId,
+        country,
+        creditXof: reservedXof,
+        phase: "produit",
+        result,
+      });
+
+      /**
+       * Le classement des images relie chaque photo à un coloris : sans lui,
+       * cocher un coloris ne changerait rien à l'export. Long, donc après la
+       * réponse — et un échec ici ne défait pas la livraison.
+       */
+      if (env.GEMINI_API_KEY) {
         try {
-          const done = await classifyProductRecord(record.productId, env.GEMINI_API_KEY as string);
-          if (!done.alreadyDone) {
-            console.log(`[variante] images classées : ${done.classified}/${done.total}`);
-          }
+          await classifyProductRecord(productRef, env.GEMINI_API_KEY);
         } catch (error) {
           console.warn("[variante] classement des images échoué", error);
         }
-      });
+      }
+    } catch (error) {
+      await releaseAnalysis({ userId, analysisId, reservedXof }).catch(() => undefined);
+      await db
+        .update(analyses)
+        .set({ status: "echouee", failureCode: "VARIANT_RESUME_FAILED", updatedAt: new Date() })
+        .where(eq(analyses.id, analysisId))
+        .catch(() => undefined);
+
+      console.error("[variante] reprise échouée", error);
     }
+  });
 
-    return NextResponse.json(outcome.payload);
-  } catch (error) {
-    await releaseAnalysis({
-      userId: session.user.id,
-      analysisId: analysis.id,
-      reservedXof: analysis.reservedXof ?? 0,
-    });
-    await db
-      .update(analyses)
-      .set({ status: "echouee", failureCode: "VARIANT_RESUME_FAILED", updatedAt: new Date() })
-      .where(eq(analyses.id, analysis.id));
-
-    console.error("[variante] reprise échouée", error);
-    return NextResponse.json(
-      { error: "PIPELINE_FAILED", message: "La reprise a échoué. Aucun crédit n'a été débité." },
-      { status: 503 },
-    );
-  }
+  return NextResponse.json({ analysisId, status: "ocr", resumed: true }, { status: 202 });
 }

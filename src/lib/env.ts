@@ -26,6 +26,12 @@ const schema = z.object({
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET: z.string().default("creaad"),
+  /**
+   * Domaine public du bucket (r2.dev ou domaine personnalisé).
+   * Sans lui, l'upload présigné est désactivé et les photos repartent en
+   * base64 — l'application continue de fonctionner, dégradée mais honnête.
+   */
+  R2_PUBLIC_URL: z.string().optional(),
 
   GP_BASE: z.url().default("https://geniuspay.ci/api/v1/merchant"),
   GP_PK: z.string().optional(),
@@ -52,7 +58,12 @@ const schema = z.object({
   ACTOR_SUPPLIERS: z.string().default("zen-studio~1688-wholesale-scraper"),
   ACTOR_META_ADS: z.string().default("jmlp~meta-ad-library-scraper"),
 
+  /** Emails autorisés sur /admin/metrics — liste séparée par des virgules. Vide = page fermée. */
+  ADMIN_EMAILS: z.string().default(""),
+
   CREDIT_XOF: z.coerce.number().int().positive().default(1000),
+  /** Étape 2 quand ce marché est déjà calculé : on ne revend pas deux fois la même donnée. */
+  CREDIT_XOF_CACHED: z.coerce.number().int().positive().default(500),
   MIN_TOPUP_XOF: z.coerce.number().int().positive().default(5000),
 });
 

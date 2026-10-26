@@ -48,7 +48,7 @@ async function resolveProductArchetype(
     category,
     catalogue,
     ...(providers.writer
-      ? { ask: (prompt: string) => providers.writer!.write(prompt) }
+      ? { ask: (prompt: string) => providers.writer!.write(prompt, { step: "archetype-router" }) }
       : {}),
   });
 
@@ -94,6 +94,13 @@ export interface RunAnalysisInput {
   /** Produit déjà identifié : la reprise ne relance aucune recherche payante. */
   productRef?: string;
   analysisId?: string;
+  /**
+   * Progression réelle, écrite en base par l'appelant.
+   *
+   * Elle remplace des étapes inventées côté client (`at: 5, 13, 20…`).
+   * Deux jalons seulement, mais deux jalons **vrais**.
+   */
+  onStage?: (stage: "ocr" | "appariement") => Promise<void> | void;
 }
 
 export interface RunAnalysisResult {
@@ -116,6 +123,8 @@ export async function runAnalysis(
   const warnings: string[] = [];
   const regime: Regime = input.regime ?? "non_detenu";
 
+  await input.onStage?.("ocr");
+
   const identify = await identifyArticle(providers, {
     category: input.category ?? "beaute",
     regime,
@@ -125,6 +134,8 @@ export async function runAnalysis(
     userText: input.userText,
   });
   warnings.push(...identify.warnings);
+
+  await input.onStage?.("appariement");
 
   /* ── produit exact : la voie payante, quand elle est disponible ──────── */
   let product: ProductIdentification | undefined;
@@ -208,7 +219,11 @@ export async function runAnalysis(
   warnings.push(...plan.warnings);
 
   /* ── marché : ne dépend que de l'archétype, donc calculé avant tout refus ── */
-  const { matrix } = await buildMatrixFor(identify.archetype.slug, input.country);
+  const { matrix } = await buildMatrixFor(identify.archetype.slug, input.country, {
+    // Étiquetage des hooks par le modèle, mis en cache par annonce : le
+    // classifieur déterministe seul mesurait 29 % de précision sur du réel.
+    ...(providers.writer ? { writer: providers.writer } : {}),
+  });
   const portfolio = buildPortfolio(matrix);
 
   if (!matrix.publishable) {

@@ -101,7 +101,7 @@ export class GeminiVisualComparator implements VisualComparator {
     const raw = await generate(this.apiKey, this.model, parts, {
       responseMimeType: "application/json",
       responseSchema: COMPARATOR_SCHEMA,
-    });
+    }, { step: "visual-compare" });
 
     try {
       const parsed = JSON.parse(raw) as {
@@ -173,7 +173,7 @@ export class GeminiSlotClassifier implements SlotClassifier {
     const raw = await generate(this.apiKey, this.model, parts, {
       responseMimeType: "application/json",
       responseSchema: SLOT_SCHEMA,
-    });
+    }, { step: "slots" });
 
     const known = new Set(slots.map((s) => s.id));
     try {

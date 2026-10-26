@@ -4,6 +4,7 @@
  */
 import { and, eq, gt, lt, sql } from "drizzle-orm";
 
+import { logPipelineCost, XOF_PER_USD } from "@/lib/costs";
 import { db } from "@/lib/db";
 import { topups } from "@/lib/db/schema";
 import { verifyPayment } from "@/lib/geniuspay/client";
@@ -59,6 +60,21 @@ export async function syncTopup(reference: string): Promise<SyncOutcome> {
     .update(topups)
     .set({ status: "completed", completedAt: new Date() })
     .where(eq(topups.id, topup.id));
+
+  /**
+   * Les frais d'encaissement sont un coût, pas un revenu. Les ignorer rendait
+   * la marge fausse de 4,5 % : on les journalise au même endroit que le reste,
+   * marqués « estimated » tant que le taux réel n'est pas confirmé.
+   */
+  const feeXof = state.fees ?? Math.round(state.amountXof * 0.025 + 100);
+  void logPipelineCost({
+    step: "payment_fee",
+    provider: "geniuspay",
+    ...(state.paymentMethod ? { model: state.paymentMethod } : {}),
+    costUsd: feeXof / XOF_PER_USD,
+    externalId: state.reference,
+    estimated: true,
+  });
 
   return { result: "credited", topupId: topup.id, balance };
 }

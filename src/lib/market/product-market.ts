@@ -14,24 +14,15 @@ import { and, eq, gt } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import { adObservations, metaQueries } from "../db/schema.ts";
 import type { MetaAdHit, MetaAdsSearch } from "../providers/meta-ads.ts";
+import { MARKET } from "./saturation.ts";
+import { zoneOf } from "./zones.ts";
 
 /** En dessous, on considère le palier vide : trois annonces font un marché. */
-export const MIN_ADS = 3;
+export const MIN_ADS = MARKET.minAdsProduct;
 
 /** Durées de cache : une absence d'annonce peut se démentir plus vite. */
 const TTL_POSITIVE_DAYS = 30;
 const TTL_NEGATIVE_DAYS = 7;
-
-/** Zones : le pays choisi en tête, puis les marchés les plus proches. */
-export const ZONES: Record<string, string[]> = {
-  CI: ["CI", "SN", "BF", "ML", "TG", "BJ", "CM"],
-  SN: ["SN", "CI", "ML", "GN", "BJ", "TG", "BF"],
-  CM: ["CM", "CI", "GA", "CG", "TD", "SN", "BJ"],
-  BJ: ["BJ", "TG", "CI", "SN", "BF", "ML", "NE"],
-  TG: ["TG", "BJ", "CI", "SN", "BF", "ML", "GH"],
-  ML: ["ML", "CI", "SN", "BF", "GN", "NE", "BJ"],
-  BF: ["BF", "CI", "ML", "SN", "TG", "BJ", "NE"],
-};
 
 /** Devise → marché lisible. Seule attribution géographique disponible. */
 const CURRENCY_MARKET: Record<string, string> = {
@@ -71,12 +62,6 @@ export interface ProductQuery {
   brand?: string;
   model?: string;
   category: string;
-}
-
-function zoneOf(country: string): string[] {
-  const zone = ZONES[country.toUpperCase()];
-  // Pays inconnu de la table : on élargit d'emblée au monde.
-  return zone ?? [country.toUpperCase()];
 }
 
 /** Requête : marque + modèle si on les a, sinon la marque seule. */

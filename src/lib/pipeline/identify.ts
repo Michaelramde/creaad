@@ -113,8 +113,29 @@ export async function identifyArticle(  providers: Providers,
     ? buildArchetype({ text: input.userText as string, fallbackCategory: input.category })
     : null;
 
-  const ocrPromise = runOcr(providers, input.imageUrls, warnings);
-  const attributesPromise = providers.attributes.describe(input.imageUrls);
+  /**
+   * Une lecture groupée quand le fournisseur le permet : les mêmes images ne
+   * partent qu'une fois. En cas d'échec, on retombe sur les deux appels
+   * séparés — la qualité ne doit pas dépendre de l'optimisation.
+   */
+  const readPromise = (async (): Promise<{
+    ocr: { text: string; confidence: number }[];
+    attributes: Awaited<ReturnType<Providers["attributes"]["describe"]>>;
+  }> => {
+    if (providers.reader) {
+      try {
+        return await providers.reader.read(input.imageUrls);
+      } catch (error) {
+        warnings.push(`Lecture groupée indisponible (${providers.reader.name})`);
+        console.warn("[identify] lecture groupée échouée", error);
+      }
+    }
+    const [ocr, attributes] = await Promise.all([
+      runOcr(providers, input.imageUrls, warnings),
+      providers.attributes.describe(input.imageUrls),
+    ]);
+    return { ocr, attributes };
+  })();
   const embeddingsPromise = providers.embeddings
     .embed(input.imageUrls)
     .catch((error: unknown) => {
@@ -127,11 +148,9 @@ export async function identifyArticle(  providers: Providers,
     : null;
 
   /* 2 — OCR et attributs (une panne d'attributs remonte : elle fausserait le score). */
-  const [ocrResults, attributes, embeddings] = await Promise.all([
-    ocrPromise,
-    attributesPromise,
-    embeddingsPromise,
-  ]);
+  const [read, embeddings] = await Promise.all([readPromise, embeddingsPromise]);
+  const ocrResults = read.ocr;
+  const attributes = read.attributes;
   const userEmbedding = centroid(embeddings);
 
   const ocrText = ocrResults

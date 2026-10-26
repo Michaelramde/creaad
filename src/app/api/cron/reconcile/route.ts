@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { analyses } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { pendingTopupsOlderThan, syncTopup } from "@/lib/payments/settle";
+import { purgeExpired } from "@/lib/products/records";
 import { releaseAnalysis } from "@/lib/wallet/repo";
 
 export const runtime = "nodejs";
@@ -50,7 +51,7 @@ export async function GET(req: Request) {
     .from(analyses)
     .where(
       and(
-        inArray(analyses.status, ["ocr", "appariement", "reservee", "creee", "variante_a_choisir"]),
+        inArray(analyses.status, ["ocr", "appariement", "creee", "variante_a_choisir"]),
         sql`${analyses.reservedXof} > 0`,
         sql`${analyses.createdAt} < now() - (${ABANDON_MINUTES} || ' minutes')::interval`,
       ),
@@ -76,9 +77,22 @@ export async function GET(req: Request) {
     }
   }
 
+  /**
+   * Purge des fiches produit et des recherches d'image expirées.
+   * `purgeExpired()` existait depuis le début et n'était appelé par personne :
+   * `product_records` et `image_queries` grossissaient indéfiniment.
+   */
+  let purged = { records: 0, queries: 0 };
+  try {
+    purged = await purgeExpired();
+  } catch (error) {
+    console.error("[cron/reconcile] purge impossible", error);
+  }
+
   return NextResponse.json({
     checked: pending.length,
     results,
+    purged,
     abandoned: { found: abandoned.length, released },
     base: env.GP_BASE,
     at: new Date().toISOString(),

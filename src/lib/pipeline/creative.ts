@@ -11,7 +11,8 @@ import type { CreativeKit } from "../contracts/kits.ts";
 
 export interface CreativeWriter {
   readonly name: string;
-  write(prompt: string): Promise<string>;
+  /** `meta.step` nomme l'étape dans `pipeline_costs` : sans lui, tout est « creative ». */
+  write(prompt: string, meta?: { step?: string; analysisId?: string }): Promise<string>;
 }
 
 export interface CreativeStepInput {

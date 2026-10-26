@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { after, NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { putMarketKit } from "@/lib/cache/store";
+import { hasFreshMarketKit, putMarketKit } from "@/lib/cache/store";
 import { db } from "@/lib/db";
 import { adObservations, analyses, products } from "@/lib/db/schema";
 import { env } from "@/lib/env";
@@ -15,7 +15,13 @@ import { verifyProductAds } from "@/lib/market/verify-ads";
 import { repairCreativeKit } from "@/lib/pipeline/repair";
 import { createProviders } from "@/lib/providers";
 import { getFreshRecord } from "@/lib/products/records";
-import { releaseAnalysis, reserveForAnalysis, settleAnalysis } from "@/lib/wallet/repo";
+import {
+  InsufficientFundsError,
+  getWalletSummary,
+  releaseAnalysis,
+  reserveForAnalysis,
+  settleAnalysis,
+} from "@/lib/wallet/repo";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -60,41 +66,103 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .where(eq(products.id, analysis.productId))
     .limit(1);
 
-  const creditXof = env.CREDIT_XOF;
-  const reservation = await reserveForAnalysis({
-    userId: session.user.id,
-    analysisId: analysis.id,
-    amountXof: creditXof,
-    step: 2,
-  });
+  /**
+   * Tarif selon l'état du cache : si ce marché a déjà été calculé, le
+   * commerçant paie 500 FCFA au lieu de 1 000. Facturer plein tarif une
+   * donnée déjà payée était une double facturation silencieuse.
+   */
+  const alreadyComputed = await hasFreshMarketKit(analysis.archetypeSlug, analysis.country);
+  const creditXof = alreadyComputed ? env.CREDIT_XOF_CACHED : env.CREDIT_XOF;
 
-  if (!reservation.debited) {
-    // Déjà réservée (rejeu) : on continue sans redébiter.
+  /**
+   * La réservation est DANS un try : hors de lui, un solde insuffisant
+   * remontait en 500 générique au lieu d'un 402 qui propose la recharge.
+   */
+  try {
+    await reserveForAnalysis({
+      userId: session.user.id,
+      analysisId: analysis.id,
+      amountXof: creditXof,
+      step: 2,
+    });
+  } catch (error) {
+    if (error instanceof InsufficientFundsError) {
+      const wallet = await getWalletSummary(session.user.id);
+      return NextResponse.json(
+        {
+          error: "INSUFFICIENT_FUNDS",
+          balanceXof: wallet.balanceXof,
+          creditXof,
+          minimum: wallet.minTopupXof,
+        },
+        { status: 402 },
+      );
+    }
+    throw error;
   }
 
+  const providers = createProviders();
+
+  /** Une fois le crédit réglé, un échec ultérieur ne doit plus le restituer. */
+  let settled = false;
+
   try {
-    const { matrix } = await buildMatrixFor(analysis.archetypeSlug, analysis.country);
+    const { matrix } = await buildMatrixFor(analysis.archetypeSlug, analysis.country, {
+      ...(providers.writer ? { writer: providers.writer } : {}),
+    });
     const portfolio = buildPortfolio(matrix);
 
-    if (matrix.publishable) {
-      const archetypeId = await ensureArchetype({
-        slug: analysis.archetypeSlug,
-        label: analysis.archetypeSlug.replace(/-/g, " "),
-        category: (analysis.archetypeSlug.split("-")[0] ?? "beaute") as
-          | "beaute"
-          | "cheveux"
-          | "mode"
-          | "gadgets",
+    /**
+     * Données insuffisantes : on ne facture pas un marché qu'on ne peut pas
+     * rendre. C'était l'incohérence la plus visible du produit — le slogan dit
+     * « débité à la livraison des kits », le code débitait quand même.
+     */
+    if (!matrix.publishable) {
+      await releaseAnalysis({
+        userId: session.user.id,
+        analysisId: analysis.id,
+        reservedXof: creditXof,
+        step: 2,
       });
+      await db
+        .update(analyses)
+        .set({
+          marketScope: "archetype",
+          marketNote: portfolio.message ?? "Données de marché insuffisantes.",
+          updatedAt: new Date(),
+        })
+        .where(eq(analyses.id, analysis.id));
 
-      await putMarketKit({
-        archetypeId,
-        country: analysis.country,
-        content: { portfolio, dataQuality: matrix.dataQuality },
+      return NextResponse.json({
+        analysisId: analysis.id,
+        status: "produit_pret",
+        step: 2,
+        publishable: false,
+        charged: false,
         adsFound: matrix.dataQuality.adsFound,
-        confidence: matrix.dataQuality.confidence,
+        message:
+          portfolio.message ??
+          "Pas assez d'annonces observées pour publier une carte : aucun crédit n'a été débité.",
       });
     }
+
+    const archetypeId = await ensureArchetype({
+      slug: analysis.archetypeSlug,
+      label: analysis.archetypeSlug.replace(/-/g, " "),
+      category: (analysis.archetypeSlug.split("-")[0] ?? "beaute") as
+        | "beaute"
+        | "cheveux"
+        | "mode"
+        | "gadgets",
+    });
+
+    await putMarketKit({
+      archetypeId,
+      country: analysis.country,
+      content: { portfolio, dataQuality: matrix.dataQuality },
+      adsFound: matrix.dataQuality.adsFound,
+      confidence: matrix.dataQuality.confidence,
+    });
 
     await settleAnalysis({
       userId: session.user.id,
@@ -103,6 +171,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       actualXof: creditXof,
       step: 2,
     });
+    settled = true;
 
     await db
       .update(analyses)
@@ -111,7 +180,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
     /* ── Le reste après la réponse ────────────────────────────────────────── */
     const record = analysis.productRef ? await getFreshRecord("aliexpress", analysis.productRef) : null;
-    const providers = createProviders();
 
     after(async () => {
       try {
@@ -218,14 +286,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       },
       charged: true,
       creditXof,
+      cached: alreadyComputed,
     });
   } catch (error) {
-    await releaseAnalysis({
-      userId: session.user.id,
-      analysisId: analysis.id,
-      reservedXof: creditXof,
-      step: 2,
-    });
+    if (!settled) {
+      await releaseAnalysis({
+        userId: session.user.id,
+        analysisId: analysis.id,
+        reservedXof: creditXof,
+        step: 2,
+      });
+    }
 
     console.error("[marche] étape 2 échouée", error);
     return NextResponse.json(

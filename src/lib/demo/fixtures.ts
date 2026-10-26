@@ -83,8 +83,9 @@ export const demoProductKit: ProductKit = {
     missing: [],
   },
   fidelity: {
-    score: 82,
-    breakdown: { resolution: 18.4, coverage: 30, consistency: 13.5, text: 11.2, consensus: 8.9 },
+    score: 78,
+    // Barème réel : couverture 50 · résolution 25 · texte 25.
+    breakdown: { coverage: 45, resolution: 20.5, text: 12.5, distinctSources: 4 },
     gatePassed: true,
   },
   evidence: {

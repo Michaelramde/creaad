@@ -12,10 +12,16 @@ export class GeminiCreativeWriter implements CreativeWriter {
     this.model = model;
   }
 
-  async write(prompt: string): Promise<string> {
-    return generate(this.apiKey, this.model, [{ text: prompt }], {
-      responseMimeType: "application/json",
-      temperature: 0.8,
-    });
+  async write(prompt: string, meta?: { step?: string; analysisId?: string }): Promise<string> {
+    return generate(
+      this.apiKey,
+      this.model,
+      [{ text: prompt }],
+      { responseMimeType: "application/json", temperature: 0.8 },
+      {
+        step: meta?.step ?? "creative",
+        ...(meta?.analysisId ? { analysisId: meta.analysisId } : {}),
+      },
+    );
   }
 }

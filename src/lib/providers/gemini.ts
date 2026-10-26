@@ -16,6 +16,7 @@
  * stylisés). Alternative auto-hébergée de meilleure qualité : PaddleOCR /
  * RapidOCR via ONNX, sur un petit worker.
  */
+import { logPipelineCost } from "../costs.ts";
 import type { OcrResult } from "../matching/types.ts";
 import type { Attributes } from "../matching/types.ts";
 import type { AttributeProvider, OcrProvider } from "./types.ts";
@@ -62,10 +63,37 @@ export async function toInlinePart(url: string): Promise<InlinePart> {
 
 interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
 }
 
+/**
+ * Contexte de coût. Sans lui, six appels par analyse resteraient invisibles :
+ * c'est exactement le trou que l'audit avait relevé (logPipelineCost n'était
+ * appelé que par Apify).
+ */
+export interface GeminiMeta {
+  step: string;
+  analysisId?: string;
+}
+
+/** Tarif public indicatif du palier payant — 0 tant que le palier gratuit tient. */
+const PRICE_PER_MTOKENS = { input: 0.3, output: 2.5 };
+
+export function geminiCostUsd(input: { in?: number; out?: number }, paid: boolean): number {
+  if (!paid) return 0;
+  const inCost = ((input.in ?? 0) / 1_000_000) * PRICE_PER_MTOKENS.input;
+  const outCost = ((input.out ?? 0) / 1_000_000) * PRICE_PER_MTOKENS.output;
+  return inCost + outCost;
+}
+
+const isPaidTier = () => process.env.GEMINI_PAID === "1" || process.env.GEMINI_PAID === "true";
+
 /** Un appel, avec deux tentatives sur les erreurs transitoires. */
-async function attemptModel(apiKey: string, model: string, body: string): Promise<string> {
+async function attemptModel(
+  apiKey: string,
+  model: string,
+  body: string,
+): Promise<{ text: string; usage: GeminiResponse["usageMetadata"] }> {
   const retryable = new Set([429, 500, 503]);
   let lastError: Error & { status?: number } = new Error("Gemini : échec inconnu");
 
@@ -80,10 +108,11 @@ async function attemptModel(apiKey: string, model: string, body: string): Promis
 
     if (res.ok) {
       const payload = (await res.json()) as GeminiResponse;
-      return (payload.candidates?.[0]?.content?.parts ?? [])
+      const text = (payload.candidates?.[0]?.content?.parts ?? [])
         .map((p) => p.text ?? "")
         .join("")
         .trim();
+      return { text, usage: payload.usageMetadata };
     }
 
     const detail = await res.text().catch(() => "");
@@ -104,6 +133,7 @@ export async function generate(
   model: string,
   parts: unknown[],
   generationConfig?: Record<string, unknown>,
+  meta?: GeminiMeta,
 ): Promise<string> {
   const body = JSON.stringify({
     contents: [{ role: "user", parts }],
@@ -115,7 +145,24 @@ export async function generate(
 
   for (const candidate of models) {
     try {
-      return await attemptModel(apiKey, candidate, body);
+      const started = Date.now();
+      const { text, usage } = await attemptModel(apiKey, candidate, body);
+      const tokensIn = usage?.promptTokenCount;
+      const tokensOut = usage?.candidatesTokenCount;
+      // Journalisé même à 0 $ : le jour où le palier gratuit tombe, la ligne
+      // existe déjà et la marge ne devient pas une surprise.
+      void logPipelineCost({
+        ...(meta?.analysisId ? { analysisId: meta.analysisId } : {}),
+        step: meta?.step ?? "gemini",
+        provider: "gemini",
+        model: candidate,
+        costUsd: geminiCostUsd({ in: tokensIn, out: tokensOut }, isPaidTier()),
+        durationMs: Date.now() - started,
+        estimated: !isPaidTier(),
+        ...(tokensIn !== undefined ? { tokensIn } : {}),
+        ...(tokensOut !== undefined ? { tokensOut } : {}),
+      });
+      return text;
     } catch (error) {
       lastError = error as Error & { status?: number };
       // 429 = quota du modèle atteint, 404 = modèle retiré : un autre peut répondre.
@@ -179,7 +226,7 @@ export class GeminiOcrProvider implements OcrProvider {
         },
         required: ["pages"],
       },
-    });
+    }, { step: "ocr" });
 
     const byIndex = new Map<number, string>();
     try {
@@ -236,6 +283,7 @@ export class GeminiAttributeProvider implements AttributeProvider {
         },
       ],
       { responseMimeType: "application/json", responseSchema: ATTRIBUTE_SCHEMA },
+      { step: "attributes" },
     );
 
     try {
@@ -261,5 +309,125 @@ export class GeminiAttributeProvider implements AttributeProvider {
       // Une réponse illisible ne devient pas une donnée : on ne retourne rien.
       return {};
     }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LECTURE GROUPÉE — OCR + attributs en un seul appel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const READER_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    pages: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { index: { type: "NUMBER" }, text: { type: "STRING" } },
+        required: ["index", "text"],
+      },
+    },
+    attributes: {
+      type: "OBJECT",
+      properties: {
+        color: { type: "STRING" },
+        form: { type: "STRING" },
+        category: { type: "STRING", enum: ["beaute", "cheveux", "mode", "gadgets"] },
+        material: { type: "STRING" },
+      },
+    },
+  },
+  required: ["pages", "attributes"],
+};
+
+/**
+ * Une seule lecture pour deux besoins.
+ *
+ * Avant : un appel OCR (6 images), puis un appel attributs (4 images) — les
+ * mêmes pixels envoyés deux fois sur le réseau, deux fois facturés, deux fois
+ * attendus. La latence du pipeline en dépendait directement.
+ */
+export class GeminiReaderProvider {
+  readonly name = "gemini-reader";
+  private readonly apiKey: string;
+  private readonly model: string;
+
+  constructor(apiKey: string, model: string = DEFAULT_GEMINI_MODEL) {
+    this.apiKey = apiKey;
+    this.model = model;
+  }
+
+  async read(imageUrls: readonly string[]): Promise<{ ocr: OcrResult[]; attributes: Attributes }> {
+    const urls = imageUrls.slice(0, 6);
+    if (urls.length === 0) return { ocr: [], attributes: {} };
+
+    const parts: unknown[] = [];
+    for (let i = 0; i < urls.length; i += 1) {
+      parts.push({ text: `IMAGE ${i} :` });
+      const inline = await toInlinePart(urls[i] as string).catch(() => null);
+      if (inline) parts.push(inline);
+    }
+
+    parts.push({
+      text:
+        "Deux tâches, un seul passage.\n" +
+        "1. Transcris EXACTEMENT le texte lisible de chaque produit (étiquette, emballage, " +
+        "mentions). Ne traduis pas, ne reformule pas, ne devine pas.\n" +
+        "2. Décris le produit photographié : couleur dominante, forme, matière, catégorie.\n" +
+        "Omets une clé d'attribut si l'information n'est pas visible — n'invente jamais.\n" +
+        `Réponds en JSON : pages = un objet par image (index de 0 à ${urls.length - 1}, texte brut), ` +
+        "attributes = uniquement des valeurs réellement visibles.",
+    });
+
+    const raw = await generate(
+      this.apiKey,
+      this.model,
+      parts,
+      { responseMimeType: "application/json", responseSchema: READER_SCHEMA },
+      { step: "read" },
+    );
+
+    let pages: { index?: number; text?: string }[] = [];
+    let attributes: Attributes = {};
+
+    try {
+      const parsed = JSON.parse(raw) as {
+        pages?: { index?: number; text?: string }[];
+        attributes?: Record<string, unknown>;
+      };
+      pages = parsed.pages ?? [];
+
+      const pick = (key: string) =>
+        typeof parsed.attributes?.[key] === "string" &&
+        (parsed.attributes[key] as string).length > 0
+          ? (parsed.attributes[key] as string)
+          : undefined;
+
+      const color = pick("color");
+      const form = pick("form");
+      const material = pick("material");
+      const category = pick("category");
+      if (color) attributes.color = color;
+      if (form) attributes.form = form;
+      if (material) attributes.material = material;
+      if (category === "beaute" || category === "cheveux" || category === "mode" || category === "gadgets") {
+        attributes.category = category;
+      }
+    } catch {
+      // Réponse illisible : textes vides, aucun attribut. On ne devine pas.
+    }
+
+    const byIndex = new Map<number, string>();
+    for (const page of pages) {
+      if (typeof page.index === "number") byIndex.set(page.index, page.text ?? "");
+    }
+
+    return {
+      ocr: urls.map((_, index) => {
+        const text = byIndex.get(index) ?? "";
+        return { text, confidence: text.length > 0 ? 1 : 0, provider: this.name };
+      }),
+      attributes,
+    };
   }
 }

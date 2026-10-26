@@ -36,7 +36,14 @@ export async function GET(
 
   const match = /^data:(image\/[a-z+]+);base64,(.*)$/s.exec(url);
   if (!match) {
-    // Une URL distante est redirigée telle quelle.
+    /**
+     * Une URL distante est redirigée — mais **https uniquement** : la route est
+     * publique (UUID comme capacité), une redirection vers http:// ou un autre
+     * schéma en ferait un vecteur d'abus.
+     */
+    if (!/^https:\/\//i.test(url)) {
+      return NextResponse.json({ error: "UNSUPPORTED_URL" }, { status: 415 });
+    }
     return NextResponse.redirect(url);
   }
 

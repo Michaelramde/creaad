@@ -2,10 +2,10 @@
  * Stockage du cache marché (Neon) — miroir de l'index unique
  * `(archetype_id, country, language)`.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { marketKits } from "@/lib/db/schema";
+import { archetypes, marketKits } from "@/lib/db/schema";
 import type { Confidence } from "../market/types.ts";
 import { describeLookup, expiryFor, isFresh, shouldCache } from "./policy.ts";
 
@@ -107,6 +107,29 @@ export async function putMarketKit(input: {
     });
 
   return { stored: true, expiresAt };
+}
+
+/**
+ * Ce marché a-t-il déjà été calculé récemment ?
+ *
+ * Si oui, l'étape 2 ne coûte presque rien à produire : la facturer plein
+ * tarif serait vendre deux fois la même donnée.
+ */
+export async function hasFreshMarketKit(slug: string, country: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: marketKits.id })
+    .from(marketKits)
+    .innerJoin(archetypes, eq(marketKits.archetypeId, archetypes.id))
+    .where(
+      and(
+        eq(archetypes.slug, slug),
+        eq(marketKits.country, country),
+        sql`${marketKits.expiresAt} > now()`,
+      ),
+    )
+    .limit(1);
+
+  return Boolean(row);
 }
 
 /** Invalidation manuelle (spec obsolète, changement de marché…). */

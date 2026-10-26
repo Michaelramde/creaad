@@ -2,11 +2,67 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { Kicker } from "@/components/ui";
 import { authClient } from "@/lib/auth-client";
-import { compressImage, type CompressedImage } from "@/lib/client/image";
+import { compressImage, dataUrlToBlob, type CompressedImage } from "@/lib/client/image";
+
+interface UploadedPhoto {
+  url: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * Envoi direct vers R2, avec repli honnête.
+ *
+ * Les six photos ne traversent plus la fonction Vercel : on demande des URL
+ * présignées, le navigateur envoie les octets, l'API ne reçoit que des URLs.
+ * Si le stockage n'est pas configuré (503), on retombe sur les data URL —
+ * le parcours reste utilisable, simplement plus lourd.
+ */
+async function uploadPhotos(images: CompressedImage[]): Promise<UploadedPhoto[]> {
+  const fallback = images.map((image) => ({
+    url: image.dataUrl,
+    width: image.width,
+    height: image.height,
+  }));
+
+  try {
+    const presign = await fetch("/api/uploads/presign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files: images.map(() => ({ contentType: "image/jpeg" })) }),
+    });
+    if (!presign.ok) return fallback;
+
+    const { uploads } = (await presign.json()) as {
+      uploads: { uploadUrl: string; publicUrl: string; headers: Record<string, string> }[];
+    };
+
+    await Promise.all(
+      uploads.map(async (upload, index) => {
+        const image = images[index];
+        if (!image) return;
+        const res = await fetch(upload.uploadUrl, {
+          method: "PUT",
+          headers: upload.headers,
+          body: dataUrlToBlob(image.dataUrl),
+        });
+        if (!res.ok) throw new Error("upload R2 refusé");
+      }),
+    );
+
+    return uploads.map((upload, index) => ({
+      url: upload.publicUrl,
+      width: images[index]?.width ?? 0,
+      height: images[index]?.height ?? 0,
+    }));
+  } catch {
+    return fallback;
+  }
+}
 
 const COUNTRIES = [
   { code: "CI", label: "Côte d'Ivoire" },
@@ -20,16 +76,6 @@ const COUNTRIES = [
 
 const MAX_PHOTOS = 6;
 
-/** Étapes du pipeline, dans l'ordre réel de leur exécution. */
-const STAGES = [
-  { at: 0, label: "Lecture des photos" },
-  { at: 5, label: "Recherche du produit" },
-  { at: 13, label: "Comparaison des annonces" },
-  { at: 20, label: "Construction de la planche" },
-  { at: 26, label: "Analyse du marché" },
-  { at: 32, label: "Rédaction des créas" },
-];
-
 export default function NewAnalysisPage() {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
@@ -38,17 +84,9 @@ export default function NewAnalysisPage() {
   const [userText, setUserText] = useState("");
   const [images, setImages] = useState<CompressedImage[]>([]);
   const [busy, setBusy] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [needsTopup, setNeedsTopup] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!busy) return;
-    const started = Date.now();
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
-    return () => clearInterval(timer);
-  }, [busy]);
 
   async function onFiles(files: FileList | null) {
     if (!files) return;
@@ -69,18 +107,19 @@ export default function NewAnalysisPage() {
       return;
     }
     setBusy(true);
-    setElapsed(0);
     setError(null);
     setNeedsTopup(false);
     try {
       // La catégorie et le mode sont déduits par le moteur : le commerçant
       // n'a rien à décider, il montre son produit.
+      const photos = await uploadPhotos(images);
+
       const res = await fetch("/api/analyses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           country,
-          images: images.map((i) => ({ url: i.dataUrl, width: i.width, height: i.height })),
+          images: photos,
           userText: userText.trim() || undefined,
         }),
       });
@@ -117,7 +156,7 @@ export default function NewAnalysisPage() {
     );
   }
 
-  if (busy) return <Progress elapsed={elapsed} />;
+  if (busy) return <Launching />;
 
   return (
     <main className="mx-auto max-w-md px-5 pb-24 pt-10">
@@ -236,59 +275,22 @@ export default function NewAnalysisPage() {
   );
 }
 
-function Progress({ elapsed }: { elapsed: number }) {
-  const current = STAGES.reduce((acc, stage, index) => (elapsed >= stage.at ? index : acc), 0);
-
+/**
+ * Attente du lancement — quelques centaines de millisecondes.
+ *
+ * La progression détaillée n'est plus ici : elle appartient à la page de
+ * résultat, qui lit l'état réel du serveur. Afficher des étapes inventées
+ * pendant 30 s était le contraire de l'honnêteté qu'on revendique.
+ */
+function Launching() {
   return (
-    <main className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-6 py-16">
-      <div className="flex items-center gap-3">
-        <span className="relative flex h-9 w-9 items-center justify-center">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-stone-900 opacity-20" />
-          <span className="relative inline-flex h-3 w-3 rounded-full bg-stone-900" />
-        </span>
-        <div>
-          <p className="text-sm font-medium">Analyse en cours</p>
-          <p className="text-xs tabular-nums text-stone-500">{elapsed} s</p>
-        </div>
-      </div>
-
-      <ol className="mt-8 space-y-3">
-        {STAGES.map((stage, index) => {
-          const done = index < current;
-          const active = index === current;
-          return (
-            <li key={stage.label} className="flex items-center gap-3">
-              <span
-                className={
-                  done
-                    ? "flex h-5 w-5 items-center justify-center rounded-full bg-stone-900 text-[10px] text-white"
-                    : active
-                      ? "flex h-5 w-5 items-center justify-center rounded-full border-2 border-stone-900"
-                      : "flex h-5 w-5 items-center justify-center rounded-full border border-stone-300"
-                }
-              >
-                {done ? "✓" : ""}
-              </span>
-              <span
-                className={
-                  done
-                    ? "text-sm text-stone-400 line-through"
-                    : active
-                      ? "text-sm font-medium text-stone-900"
-                      : "text-sm text-stone-400"
-                }
-              >
-                {stage.label}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-
-      <p className="mt-8 text-xs leading-relaxed text-stone-400">
-        Les photos sont lues, le produit comparé aux annonces, puis la planche et les angles sont
-        construits. Compte une trentaine de secondes.
-      </p>
+    <main className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-6">
+      <span className="relative flex h-9 w-9 items-center justify-center">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-stone-900 opacity-20" />
+        <span className="relative inline-flex h-3 w-3 rounded-full bg-stone-900" />
+      </span>
+      <p className="mt-3 text-sm font-medium">Lancement de l&apos;analyse…</p>
+      <p className="mt-1 text-xs text-stone-500">Tu vas arriver sur la page de suivi.</p>
     </main>
   );
 }

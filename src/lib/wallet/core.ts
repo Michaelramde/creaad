@@ -78,6 +78,7 @@ export const idem = {
   liberation: (analysisId: string, step = 1) => `liberation:${analysisId}${stepSuffix(step)}`,
   reglement: (analysisId: string, step = 1) => `reglement:${analysisId}${stepSuffix(step)}`,
   remboursement: (topupId: string) => `remboursement:${topupId}`,
+  remboursementAnalyse: (analysisId: string) => `remboursement:analyse:${analysisId}`,
 } as const;
 
 /* ── Fabriques d'écritures ────────────────────────────────────────────────── */
@@ -135,6 +136,22 @@ export function settleEntries(
       type: "reglement",
       amountXof: -real,
       idempotencyKey: idem.reglement(analysisId, step),
+      analysisId,
+    },
+  ];
+}
+
+/**
+ * Le commerçant déclare que ce n'est pas son produit : on le croit et on rembourse.
+ * Le coût d'un litige dépasse largement un crédit, et un client qui paie pour
+ * le produit d'un autre ne revient jamais.
+ */
+export function refundEntries(analysisId: string, amountXof: number): EntryDraft[] {
+  return [
+    {
+      type: "remboursement",
+      amountXof: Math.abs(amountXof),
+      idempotencyKey: idem.remboursementAnalyse(analysisId),
       analysisId,
     },
   ];

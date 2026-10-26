@@ -21,6 +21,25 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "BAD_URL" }, { status: 400 });
   }
 
+  /**
+   * Cette route est une sonde : elle existait comme **proxy HTTP arbitraire**
+   * protégé par une clé statique. Si la clé fuit, c'est un SSRF. On la limite
+   * aux domaines qu'elle est censée diagnostiquer.
+   */
+  const ALLOWED_HOSTS = ["aliexpress.com", "www.aliexpress.com", "fr.aliexpress.com", "m.aliexpress.com"];
+  let host = "";
+  try {
+    host = new URL(target).hostname.toLowerCase();
+  } catch {
+    return NextResponse.json({ error: "BAD_URL" }, { status: 400 });
+  }
+  if (!ALLOWED_HOSTS.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {
+    return NextResponse.json(
+      { error: "HOST_NOT_ALLOWED", host, allowed: ALLOWED_HOSTS },
+      { status: 403 },
+    );
+  }
+
   try {
     const res = await fetch(target, {
       headers: {

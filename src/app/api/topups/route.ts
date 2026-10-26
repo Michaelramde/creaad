@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { topups } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { initiatePayment } from "@/lib/geniuspay/client";
+import { checkTopupLimit } from "@/lib/rate-limit";
 
 const bodySchema = z.object({
   amountXof: z.coerce.number().int().min(200),
@@ -27,6 +28,24 @@ export async function POST(req: Request) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "BAD_REQUEST", issues: parsed.error.issues }, { status: 400 });
+  }
+
+  /**
+   * Trois recharges par heure : au-delà, c'est un script ou un bug, pas un
+   * commerçant. Sans ce garde-fou, /api/topups créait des paiements en série
+   * chez GeniusPay sans aucun frein.
+   */
+  const quota = await checkTopupLimit(session.user.id);
+  if (!quota.allowed) {
+    return NextResponse.json(
+      {
+        error: "RATE_LIMITED",
+        message: `${quota.max} recharges par heure maximum.`,
+        used: quota.used,
+        max: quota.max,
+      },
+      { status: 429, headers: { "Retry-After": "3600" } },
+    );
   }
 
   const { amountXof, country } = parsed.data;

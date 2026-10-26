@@ -11,6 +11,8 @@
  *      fermée de slugs connus. Le modèle n'a pas le droit d'en inventer un.
  */
 import { buildArchetype, detectGender, type Archetype } from "./extract.ts";
+import { MARKET_CATALOGUE } from "./market-catalogue.ts";
+import { resolveArchetype } from "./resolve.ts";
 import type { Category } from "../matching/types.ts";
 
 export interface CatalogueEntry {
@@ -101,11 +103,30 @@ export async function routeArchetype(input: {
     return { slug, source: "lexique" };
   }
 
+  /**
+   * Deuxième couche, déterministe elle aussi : le vocabulaire explicite du
+   * catalogue (noms + modificateurs, FR/EN). C'est la correction de la faille
+   * mesurée à l'audit — 3 slugs retrouvés sur 16 par la seule heuristique.
+   *
+   * On restreint aux marchés qui ont réellement des annonces : router vers un
+   * marché vide reviendrait à facturer une carte qui n'existe pas.
+   */
+  const knownSlugs = new Set(catalogue.map((entry) => entry.slug));
+  const resolved = resolveArchetype({
+    text,
+    category,
+    catalogue: MARKET_CATALOGUE.filter((entry) => knownSlugs.has(entry.slug)),
+  });
+
+  if (resolved.slug) return { slug: resolved.slug, source: "lexique" };
+
   if (!ask) {
     return {
       slug: null,
       source: "aucun",
-      reason: "Type de produit non reconnu, et aucun routage disponible.",
+      reason:
+        resolved.reason ??
+        "Type de produit non reconnu, et aucun routage disponible.",
     };
   }
 

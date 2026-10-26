@@ -6,6 +6,7 @@
  * c'est ce qui rend le refus actionnable (« il manque le dos »).
  */
 import { buildPlan, type PlanResult } from "../planche/build.ts";
+import { measureImages } from "../planche/quality.ts";
 import type { CandidateImage } from "../planche/select.ts";
 import { requiredSlots } from "../planche/slots.ts";
 import type { Category, Regime } from "../matching/types.ts";
@@ -72,12 +73,30 @@ export async function buildPlanStep(
     height: photo.height,
   }));
 
+  /**
+   * Mesure des pixels avant de noter. Une photo floue ou posée sur un fond
+   * encombré ne peut pas produire une planche fidèle, quelle que soit la
+   * qualité du classement des vues.
+   */
+  const measures = await measureImages(input.photos.slice(0, 6).map((photo) => photo.url));
+  const valid = measures.filter((measure): measure is NonNullable<typeof measure> => measure !== null);
+  const imageQuality =
+    valid.length > 0 ? valid.reduce((acc, measure) => acc + measure.quality, 0) / valid.length : undefined;
+
+  for (const [index, measure] of measures.entries()) {
+    const image = images[index];
+    if (!image || !measure) continue;
+    image.sharpness = measure.sharpness;
+    image.backgroundClean = measure.background > 0.5;
+  }
+
   const plan = buildPlan({
     category: input.category,
     regime: input.regime,
     images,
     labelOcrConfidence: input.labelOcrConfidence,
     consistency: 0.7,
+    ...(imageQuality !== undefined ? { imageQuality } : {}),
   });
 
   ensurePinnedImage(plan, input.pinnedImageUrl);
@@ -98,5 +117,10 @@ function ensurePinnedImage(plan: PlanResult, pinned?: string): void {
   const first = plan.assignments[0];
   if (!first) return;
 
-  first.image = { ...first.image, url: pinned };
+  /**
+   * On remplace l'URL **et** ses dimensions mesurées : conserver la largeur de
+   * l'image remplacée faussait la composante « résolution » du score de
+   * fidélité (l'audit l'avait relevé, non corrigé).
+   */
+  first.image = { ...first.image, url: pinned, width: undefined, height: undefined };
 }

@@ -1,0 +1,48 @@
+name: CI
+
+# Il n'existait AUCUN job de test : 188 tests verts sur la machine de celui
+# qui les écrivait, et rien qui garantisse qu'ils le restent. C'est le risque
+# de régression numéro un, et il coûte trente lignes de YAML.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typage · tests · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Dépendances
+        run: npm ci --ignore-scripts
+
+      - name: Typage strict
+        run: node node_modules/typescript/bin/tsc --noEmit
+
+      - name: Tests unitaires
+        # Aucune base n'est nécessaire : le cœur est pur, les fournisseurs
+        # sont injectés. C'est précisément ce que l'architecture permet.
+        env:
+          DATABASE_URL: postgresql://u:p@127.0.0.1:5432/ci
+        run: node --test --test-isolation=none "tests/**/*.test.ts"
+
+      - name: Build production
+        env:
+          DATABASE_URL: postgresql://u:p@127.0.0.1:5432/ci
+          BETTER_AUTH_SECRET: ci-secret-0123456789abcdef0123456789
+          APP_URL: http://localhost:3000
+        run: node node_modules/next/dist/bin/next build

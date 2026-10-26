@@ -7,6 +7,8 @@ import { ConfirmArticle } from "@/components/confirm-article";
 import { CopyButton } from "@/components/copy-button";
 import { MarketStepButton } from "@/components/market-step-button";
 import { ProductGallery } from "@/components/product-gallery";
+import { RunProgress } from "@/components/run-progress";
+import { WrongProductButton } from "@/components/wrong-product-button";
 import { SafeImage } from "@/components/safe-image";
 import { VariantPicker } from "@/components/variant-picker";
 import { Badge, Card, Kicker, type Tone } from "@/components/ui";
@@ -257,6 +259,8 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <Badge tone={status.tone}>{status.label}</Badge>
       </div>
 
+      <RunProgress status={row.status} startedAt={row.createdAt.toISOString()} />
+
       {/* Les photos du commerçant, toujours visibles */}
       {photos.length > 0 && (
         <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
@@ -319,6 +323,11 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
             )}
           </div>
         </Card>
+      )}
+
+      {/* Le recours manquait : un faux positif était facturé sans issue. */}
+      {(row.status === "livree" || row.status === "produit_pret") && identified && (
+        <WrongProductButton analysisId={row.id} />
       )}
 
       {/* Coloris à choisir */}
@@ -464,7 +473,12 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
       {row.status === "produit_pret" && (
         <MarketStepButton
           analysisId={row.id}
-          creditXof={Number(process.env.NEXT_PUBLIC_CREDIT_XOF ?? 1000)}
+          creditXof={
+            marketMeta && portfolio && portfolio.length > 0
+              ? Number(process.env.NEXT_PUBLIC_CREDIT_XOF_CACHED ?? 500)
+              : Number(process.env.NEXT_PUBLIC_CREDIT_XOF ?? 1000)
+          }
+          cached={Boolean(marketMeta && portfolio && portfolio.length > 0)}
         />
       )}
 

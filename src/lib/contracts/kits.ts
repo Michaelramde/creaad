@@ -78,12 +78,20 @@ export const productKitSchema = z
     }),
     fidelity: z.object({
       score: z.number().min(0).max(100),
+      /**
+       * Trois composantes — 50 / 25 / 25 — et non cinq.
+       *
+       * La recalibration du 24/10 a supprimé « cohérence inter-vues » et
+       * « consensus » du score de fidélité (35 points distribués à partir
+       * d'une constante inventée). Le contrat, lui, était resté à l'ancienne
+       * forme : `parseProductKit` aurait **rejeté toute planche réelle**.
+       * `distinctSources` est une information d'audit, pas une note.
+       */
       breakdown: z.object({
-        resolution: z.number().min(0),
         coverage: z.number().min(0),
-        consistency: z.number().min(0),
+        resolution: z.number().min(0),
         text: z.number().min(0),
-        consensus: z.number().min(0),
+        distinctSources: z.number().min(0).optional(),
       }),
       gatePassed: z.boolean(),
     }),

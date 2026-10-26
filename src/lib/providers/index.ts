@@ -10,7 +10,7 @@ import {
   NoopAttributeProvider,
   NoopEmbeddingProvider,
 } from "./defaults.ts";
-import { GeminiAttributeProvider, GeminiOcrProvider } from "./gemini.ts";
+import { GeminiAttributeProvider, GeminiOcrProvider, GeminiReaderProvider } from "./gemini.ts";
 import { GeminiSlotClassifier, GeminiVisualComparator } from "./gemini-vision.ts";
 import { GeminiEmbeddingProvider } from "./gemini-embedding.ts";
 import { ApifyClient } from "./apify.ts";
@@ -76,6 +76,9 @@ export function createProviders(overrides: Partial<Providers> = {}): Providers {
   const apify = env.APIFY_TOKEN ? new ApifyClient(env.APIFY_TOKEN) : null;
 
   return {
+    reader:
+      overrides.reader ??
+      (env.GEMINI_API_KEY ? new GeminiReaderProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL) : undefined),
     ocr,
     attributes,
     embeddings:

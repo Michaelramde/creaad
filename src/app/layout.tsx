@@ -7,6 +7,8 @@ export const metadata: Metadata = {
   description:
     "Transforme les photos d'un produit en kit de vente complet : matière, argumentaire et production publicitaire.",
   manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  appleWebApp: { capable: true, title: "Creaad", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

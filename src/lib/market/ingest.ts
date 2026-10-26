@@ -36,16 +36,34 @@ function iso(value: Date | string | null | undefined, fallback: number): string 
  * longévité. On la date à « maintenant » : elle comptera comme récente,
  * donc jamais comme « prouvée ». Jamais l'inverse.
  */
-export function toAdObservation(row: RawAdRow, now = Date.now()): AdObservation {
+export function toAdObservation(
+  row: RawAdRow,
+  now = Date.now(),
+  labels?: ReadonlyMap<string, import("./types.ts").AngleFamily>,
+): AdObservation {
+  /**
+   * Une annonce arrêtée sans date de fin ne doit PAS compter comme encore
+   * en cours : elle gonflait la longévité et pouvait faire basculer une
+   * famille en « durable ici ». On la date au plus tard à sa date de collecte,
+   * à défaut à son début (= zéro jour, jamais une preuve).
+   */
+  const endFallback = row.isActive
+    ? null
+    : (row.collectedAt ?? row.startDate ?? null);
+
   return {
     id: row.id,
     advertiserId: row.advertiserId,
     advertiserName: row.advertiserName ?? undefined,
-    family: classifyHook(row.hook ?? undefined).family,
+    family: labels?.get(row.hook ?? "") ?? classifyHook(row.hook ?? undefined).family,
     platform: row.platform,
     country: row.country.toUpperCase(),
     startDate: iso(row.startDate, now),
-    endDate: row.endDate ? iso(row.endDate, now) : undefined,
+    endDate: row.endDate
+      ? iso(row.endDate, now)
+      : endFallback
+        ? iso(endFallback, now)
+        : undefined,
     isActive: row.isActive,
     url: row.url,
     hook: row.hook ?? undefined,
@@ -70,7 +88,11 @@ export interface IngestReport {
  */
 export function ingestAds(
   rows: readonly RawAdRow[],
-  options: { now?: number } = {},
+  options: {
+    now?: number;
+    /** Étiquettes résolues ailleurs (modèle ou cache) — clé : texte du hook. */
+    labels?: ReadonlyMap<string, import("./types.ts").AngleFamily>;
+  } = {},
 ): { observations: AdObservation[]; report: IngestReport } {
   const now = options.now ?? Date.now();
   const reasons: Record<string, number> = {};
@@ -96,7 +118,7 @@ export function ingestAds(
         continue;
       }
     }
-    observations.push(toAdObservation(row, now));
+    observations.push(toAdObservation(row, now, options.labels));
   }
 
   const unclassified = observations.filter((o) => o.family === "non-classe").length;

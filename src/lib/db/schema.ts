@@ -220,21 +220,19 @@ export const analyses = pgTable(
       .notNull()
       .default([]),
     status: text("status")
+      /**
+       * États RÉELLEMENT écrits (9). Les 7 autres de la SPEC §4.3 n'avaient
+       * ni producteur ni consommateur : les garder laissait croire qu'un flux
+       * existait. Migration 0019.
+       */
       .$type<
         | "creee"
-        | "reservee"
-        | "capture"
         | "ocr"
         | "appariement"
         | "bloquee_article"
         | "variante_a_choisir"
         | "produit_pret"
-        | "moisson"
         | "planche_prete"
-        | "en_attente_validation"
-        | "recherche_marche"
-        | "marche_pret"
-        | "production"
         | "livree"
         | "echouee"
       >()
@@ -278,9 +276,8 @@ export const analyses = pgTable(
     index("ix_analyses_archetype").on(t.archetypeSlug),
     check(
       "ck_analysis_states",
-      sql`${t.status} IN ('creee','reservee','capture','ocr','appariement','bloquee_article',
-        'variante_a_choisir','produit_pret','moisson','planche_prete','en_attente_validation',
-        'recherche_marche','marche_pret','production','livree','echouee')`,
+      sql`${t.status} IN ('creee','ocr','appariement','bloquee_article','variante_a_choisir',
+        'produit_pret','planche_prete','livree','echouee')`,
     ),
   ],
 );
@@ -415,6 +412,27 @@ export const adObservations = pgTable(
     index("ix_ad_obs_lookup").on(t.archetypeSlug, t.country, t.platform),
     index("ix_ad_obs_product").on(t.productRef, t.country),
   ],
+);
+
+/**
+ * Étiquettes d'angles — cache permanent du classifieur.
+ *
+ * La clé est l'empreinte du texte du hook : la même annonce étiquetée une
+ * fois n'est jamais repayée, et reste classée pareil dans six mois.
+ */
+export const hookLabels = pgTable(
+  "hook_labels",
+  {
+    hash: text("hash").primaryKey(),
+    family: text("family").notNull(),
+    /** Incrémenté quand la taxonomie change : invalide les matrices dérivées. */
+    labelVersion: integer("label_version").notNull().default(1),
+    model: text("model"),
+    source: text("source").notNull().default("llm"),
+    sample: text("sample"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_hook_labels_version").on(t.labelVersion, t.createdAt)],
 );
 
 /** Cache des recherches Meta — positif et négatif. */

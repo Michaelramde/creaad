@@ -26,9 +26,28 @@ import { ANGLE_FAMILIES } from "./types.ts";
  * 5 annonces de 4 annonceurs disent déjà qui vend cet article. On laisse donc
  * l'appelant fixer son seuil.
  */
-export const MIN_ADS_FOR_MATRIX = 15;
+/**
+ * Les seuils d'échantillon, en un seul endroit.
+ *
+ * Trois valeurs différentes coexistaient : 3 (escalade des annonces produit),
+ * 5 (matrice produit) et 15 (message d'erreur codé en dur). Un produit à
+ * 3 annonces était « un marché » pour l'escalade et « pas de marché » pour
+ * la matrice. Une seule constante, désormais.
+ */
+export const MARKET = {
+  /** Matrice d'archétype : 15 annonces valent un marché. */
+  minAdsArchetype: 15,
+  /** Matrice produit : le périmètre est étroit par nature. */
+  minAdsProduct: 3,
+  /** En dessous, une famille ne peut pas dépasser « observé non prouvé ». */
+  minAdsPerFamily: 3,
+  /** Annonceurs distincts minimum pour publier une carte. */
+  minAdvertisers: 3,
+} as const;
+
+export const MIN_ADS_FOR_MATRIX = MARKET.minAdsArchetype;
 /** En dessous, une famille ne peut pas dépasser « observé non prouvé ». */
-export const MIN_ADS_PER_FAMILY = 3;
+export const MIN_ADS_PER_FAMILY = MARKET.minAdsPerFamily;
 export const PROVEN_MIN_ADVERTISERS = 3;
 export const PROVEN_MIN_MEDIAN_DAYS = 45;
 export const RISING_MIN_RATIO = 1.5;

@@ -10,6 +10,9 @@ import {
   parseProductKit,
 } from "../src/lib/contracts/index.ts";
 
+import { computeFidelity } from "../src/lib/planche/fidelity.ts";
+import { REQUIRED_SLOTS } from "../src/lib/planche/slots.ts";
+
 /* ── fixtures valides ─────────────────────────────────────────────────────── */
 
 const productKit = () => ({
@@ -29,7 +32,7 @@ const productKit = () => ({
   coverage: { requiredSlots: ["face"], filled: ["face"], missing: [] as string[] },
   fidelity: {
     score: 90,
-    breakdown: { resolution: 20, coverage: 30, consistency: 15, text: 15, consensus: 10 },
+    breakdown: { coverage: 50, resolution: 25, text: 15, distinctSources: 4 },
     gatePassed: true,
   },
   evidence: {
@@ -235,4 +238,43 @@ test("R3 : une référence présente dans le portefeuille est acceptée", () => 
   const raw = creativeKit();
   const kit = parseCreativeKitAgainst(raw, ["avant-apres", "prix-offre"]);
   assert.equal(kit.angles[0]?.sourceAngleRef, "avant-apres");
+});
+
+
+/* ── alignement contrat ↔ implémentation ─────────────────────────────────── */
+
+test("R1 : une planche réellement calculée passe le contrat", () => {
+  // Le contrat exigeait 5 composantes ; `computeFidelity` en produit 3.
+  // `parseProductKit` aurait donc rejeté TOUTE planche réelle.
+  const specs = REQUIRED_SLOTS.beaute;
+  const fidelity = computeFidelity({
+    regime: "detenu",
+    specs,
+    filled: specs.map((spec) => spec.id),
+    images: [
+      { id: "a", url: "https://cdn.example/a.jpg", provenance: "utilisateur", width: 2048, height: 2048 },
+    ],
+    labelOcrConfidence: 1,
+    hasMacroLabel: true,
+  });
+
+  const kit = {
+    ...productKit(),
+    images: specs.map((spec, index) => ({
+      id: `i${index}`,
+      url: `https://cdn.example/${index}.jpg`,
+      slot: spec.id,
+      provenance: "utilisateur" as const,
+    })),
+    coverage: { requiredSlots: specs.map((s) => s.id), filled: specs.map((s) => s.id), missing: [] },
+    fidelity: {
+      score: fidelity.score,
+      breakdown: fidelity.breakdown,
+      gatePassed: fidelity.gatePassed,
+    },
+  };
+
+  const parsed = parseProductKit(kit);
+  assert.equal(parsed.fidelity.gatePassed, true);
+  assert.equal(parsed.fidelity.score, fidelity.score);
 });

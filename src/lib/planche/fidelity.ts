@@ -34,6 +34,8 @@ export interface FidelityBreakdown {
   text: number;
   /** Informations non notées, pour l'audit. */
   distinctSources: number;
+  /** Qualité mesurée des images (0 → 1), quand elle a pu être calculée. */
+  imageQuality?: number;
 }
 
 export interface FidelityInput {
@@ -43,6 +45,14 @@ export interface FidelityInput {
   images: readonly CandidateImage[];
   labelOcrConfidence: number;
   hasMacroLabel: boolean;
+  /**
+   * Qualité mesurée des visuels (netteté + fond), 0 → 1.
+   *
+   * Appliquée comme un **facteur** (0,7 → 1,0) : elle ne peut que baisser le
+   * score, jamais l'augmenter. Une mesure qui récompense ne serait plus une
+   * mesure, ce serait un bonus.
+   */
+  imageQuality?: number;
 }
 
 export interface FidelityResult {
@@ -86,10 +96,14 @@ export function computeFidelity(input: FidelityInput): FidelityResult {
     resolution: round(resolution),
     text: round(text),
     distinctSources: countDistinctSources(hashed),
+    ...(input.imageQuality !== undefined ? { imageQuality: round(input.imageQuality) } : {}),
   };
 
+  const factor =
+    input.imageQuality === undefined ? 1 : 0.7 + 0.3 * clamp01(input.imageQuality);
+
   const raw = Math.round(
-    breakdown.coverage + breakdown.resolution + breakdown.text,
+    (breakdown.coverage + breakdown.resolution + breakdown.text) * factor,
   );
 
   const missing = input.specs.filter((s) => !input.filled.includes(s.id)).map((s) => s.id);
